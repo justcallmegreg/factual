@@ -87,6 +87,22 @@ class FakeTelegramApi:
     async def delete_message(self, chat_id, message_id) -> None:
         self.calls.append(("delete_message", {"chat_id": chat_id, "message_id": message_id}))
 
+    async def send_document(self, chat_id, filename, data, caption, reply_to_message_id) -> dict:
+        self.calls.append(
+            (
+                "send_document",
+                {
+                    "chat_id": chat_id,
+                    "filename": filename,
+                    "size": len(data),
+                    "caption": caption,
+                    "reply_to_message_id": reply_to_message_id,
+                },
+            )
+        )
+        self.next_message_id += 1
+        return {"message_id": self.next_message_id, "chat": {"id": chat_id}}
+
     async def get_file(self, file_id) -> dict:
         self.calls.append(("get_file", {"file_id": file_id}))
         return {"file_id": file_id, "file_path": f"documents/{file_id}.bin", "file_size": 3}

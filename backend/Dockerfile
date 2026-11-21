@@ -28,6 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY app ./app
 
 USER factual

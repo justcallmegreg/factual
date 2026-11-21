@@ -126,8 +126,6 @@ async def test_help_and_start_list_every_command(chat):
 
 
 async def test_commands_that_come_in_a_later_phase_say_so(chat):
-    await chat.say("/proof")
-    assert "not available yet" in chat.replies[-1]
     await chat.say("/respond claim")
     assert "not available yet" in chat.replies[-1]
 

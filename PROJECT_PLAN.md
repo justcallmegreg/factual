@@ -398,10 +398,10 @@ As an outsider, I want to verify a record without access to Factual, so that I c
 
 **Tasks**
 
-- [ ] Implement the pack builder and the export of chain proofs.
-- [ ] Write `verify.py` and the plain-language README.
-- [ ] Decrypt attachments into the pack and handle the 50 MB sending limit.
-- [ ] Run the outsider test and fix what confused the tester.
+- [x] Implement the pack builder and the export of chain proofs.
+- [x] Write `verify.py` and the plain-language README.
+- [x] Decrypt attachments into the pack and handle the 50 MB sending limit.
+- [x] Run the outsider test and fix what confused the tester.
 
 ### FAC-20 · Claude verdict for /ask
 

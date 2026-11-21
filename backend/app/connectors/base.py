@@ -140,6 +140,14 @@ class OutboundMessage:
 
 
 @dataclass(frozen=True)
+class OutboundFile:
+    filename: str
+    data: bytes
+    caption: str = ""
+    reply_to: MessageRef | None = None
+
+
+@dataclass(frozen=True)
 class SentRef:
     message: MessageRef
 
@@ -162,6 +170,8 @@ class Connector(Protocol):
     def fetch_blob(self, ref: BlobRef) -> AsyncIterator[bytes]: ...
 
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef: ...
+
+    async def send_file(self, chat: ChatRef, file: OutboundFile) -> SentRef: ...
 
     async def acknowledge(self, ref: MessageRef) -> None:
         """The ✍ mark, or the platform's equivalent."""

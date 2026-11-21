@@ -15,6 +15,7 @@ import httpx
 from aiogram import Bot
 from aiogram.types import (
     BotCommand,
+    BufferedInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReactionTypeEmoji,
@@ -54,6 +55,10 @@ class TelegramApi(Protocol):
     async def set_my_commands(self, commands: list[tuple[str, str]]) -> None: ...
 
     async def delete_message(self, chat_id, message_id: int) -> None: ...
+
+    async def send_document(
+        self, chat_id, filename: str, data: bytes, caption: str, reply_to_message_id: int | None
+    ) -> dict: ...
 
     async def get_file(self, file_id: str) -> dict: ...
 
@@ -140,6 +145,19 @@ class AiogramTelegramApi:
 
     async def delete_message(self, chat_id, message_id) -> None:
         await self.bot.delete_message(chat_id, message_id)
+
+    async def send_document(self, chat_id, filename, data, caption, reply_to_message_id) -> dict:
+        sent = await self.bot.send_document(
+            chat_id,
+            BufferedInputFile(data, filename=filename),
+            caption=caption or None,
+            reply_parameters=(
+                ReplyParameters(message_id=reply_to_message_id, allow_sending_without_reply=True)
+                if reply_to_message_id
+                else None
+            ),
+        )
+        return {"message_id": sent.message_id, "chat": {"id": sent.chat.id}}
 
     async def get_file(self, file_id) -> dict:
         info = await self.bot.get_file(file_id)

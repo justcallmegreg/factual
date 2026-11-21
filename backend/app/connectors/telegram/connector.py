@@ -16,6 +16,7 @@ from app.connectors.base import (
     ChatRef,
     EventSink,
     MessageRef,
+    OutboundFile,
     OutboundMessage,
     SentRef,
 )
@@ -286,6 +287,16 @@ class TelegramConnector:
                 reply_to_message_id=msg.reply_to.message_id if msg.reply_to else None,
                 buttons=buttons,
             )
+        return SentRef(MessageRef(chat, result["message_id"]))
+
+    async def send_file(self, chat: ChatRef, file: OutboundFile) -> SentRef:
+        result = await self.api.send_document(
+            chat.chat_id,
+            file.filename,
+            file.data,
+            file.caption,
+            file.reply_to.message_id if file.reply_to else None,
+        )
         return SentRef(MessageRef(chat, result["message_id"]))
 
     async def fetch_blob(self, ref: BlobRef) -> AsyncIterator[bytes]:

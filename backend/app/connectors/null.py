@@ -12,6 +12,7 @@ from app.connectors.base import (
     ChatRef,
     EventSink,
     MessageRef,
+    OutboundFile,
     OutboundMessage,
     SentRef,
 )
@@ -26,6 +27,7 @@ class NullConnector:
         self.message_ids: list[int] = []  # the id each sent (or edited) message got
         self.acknowledged: list[MessageRef] = []
         self.files: dict[str, bytes] = {}  # file_id → bytes that fetch_blob streams
+        self.files_sent: list[OutboundFile] = []
         self._next_id = 0
         self._stopped = asyncio.Event()
 
@@ -51,6 +53,12 @@ class NullConnector:
             message_id = self._next_id
         self.message_ids.append(message_id)
         return SentRef(MessageRef(chat, message_id))
+
+    async def send_file(self, chat: ChatRef, file: OutboundFile) -> SentRef:
+        self.files_sent.append(file)
+        self._next_id += 1
+        self.message_ids.append(self._next_id)
+        return SentRef(MessageRef(chat, self._next_id))
 
     async def acknowledge(self, ref: MessageRef) -> None:
         self.acknowledged.append(ref)

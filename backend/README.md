@@ -68,6 +68,12 @@ Pick authorities whose tokens include their full certificate chain, so that the 
 
 The tests run a local authority built on `openssl ts` (`tests/tsa_server.py`); one test also stamps against the two public defaults when the network allows.
 
+### Evidence packs
+
+`/proof`, as a reply to a record or with entry numbers (`/proof E41233 E41502`), posts a zip that anyone can verify offline, without access to Factual. It holds the requested entries as canonical JSON, their payloads with the salt, the entries that belong to them (edits, filings, attachments, album items), a chain proof from each entry to the first seal that covers it, those seals with their signatures and the stamped bytes, the RFC 3161 tokens with the authorities' certificate chains, the instance's public key, the decrypted attachments, a `manifest.json`, a plain-language `README.txt` and `verify.py`. Every other entry of the ledger appears only as a hash inside the chain proofs. A record that is not yet sealed gets a proof to the current chain head and the README says so.
+
+`verify.py` needs Python 3.9 or newer and the `openssl` command, nothing else: it recomputes the entry hashes and payload commitments with its own RFC 8785 canonicalizer, folds the chain proofs, checks the Ed25519 signatures with a plain-Python implementation of RFC 8032, runs `openssl ts -verify` on every token and hashes every attachment, then prints VERIFIED or FAILED and what the pack proves in one sentence per record. The tests run it with `python3 -I -S` so that nothing but the standard library can be imported. A pack over Telegram's 50 MB sending limit is not posted; Thoth points to `GET /api/v1/records/{seq}/proof` instead.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

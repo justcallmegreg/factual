@@ -55,8 +55,12 @@ def seal_hash(body: bytes) -> bytes:
 
 
 def stamped_bytes(body: bytes, signature: bytes) -> bytes:
-    """What a time-stamping authority stamps: SHA-256(seal ‖ signature)."""
-    return hashlib.sha256(body + signature).digest()
+    """The bytes a time-stamping authority stamps: seal ‖ signature.
+
+    The TSA request carries SHA-256 of these bytes; `openssl ts -verify -data` hashes
+    the same bytes again, so the pack stores them as `seals/<no>.stamped`.
+    """
+    return body + signature
 
 
 def sign_seal(key: Ed25519PrivateKey, body: bytes) -> bytes:

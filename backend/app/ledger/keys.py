@@ -73,3 +73,12 @@ def key_fingerprint(key: Ed25519PrivateKey) -> str:
         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     )
     return "sha256:" + hashlib.sha256(der).hexdigest()
+
+
+def key_fingerprint_of_pem(pem: bytes) -> str:
+    """The same fingerprint as `key_fingerprint`, from a public key PEM."""
+    public = serialization.load_pem_public_key(pem)
+    der = public.public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    return "sha256:" + hashlib.sha256(der).hexdigest()

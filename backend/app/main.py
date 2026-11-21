@@ -25,8 +25,9 @@ from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.anchors import ANCHOR_JOB, SealAnchoring
-from app.ledger.keys import load_signing_key, public_key_bytes
+from app.ledger.keys import load_signing_key, public_key_bytes, public_key_pem
 from app.ledger.ledger import Ledger
+from app.ledger.pack import PackBuilder
 from app.ledger.seals import Sealer
 from app.ledger.tsa import TimestampClient
 from app.ledger.verify import Verifier
@@ -160,6 +161,14 @@ def create_app(
             sealer.after_seal.append(anchoring.after_seal)
             app.state.jobs = jobs = JobWorker(
                 db, {AttachmentFetcher.KIND: fetcher, ANCHOR_JOB: anchoring}
+            )
+            app.state.pack_builder = commands.options["pack_builder"] = PackBuilder(
+                db,
+                app.state.ledger,
+                public_key_pem=public_key_pem(signing_key),
+                store=store,
+                master_key=master_key,
+                timezone=active.timezone,
             )
             job_task = asyncio.create_task(jobs.start(), name="jobs")
             polling = asyncio.create_task(connector.start(sink), name="connector")

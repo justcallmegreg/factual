@@ -125,6 +125,17 @@ class Chat:
             handlers[ANCHOR_JOB] = anchoring
         if handlers:
             worker = JobWorker(db, handlers, clock=clock, poll_interval=0.01)
+        from app.ledger.keys import public_key_pem
+        from app.ledger.pack import PackBuilder
+
+        commands.options["pack_builder"] = PackBuilder(
+            db,
+            ledger,
+            public_key_pem=public_key_pem(signing_key),
+            store=store,
+            master_key=master_key,
+            timezone=timezone,
+        )
         ingestion = Ingestion(
             ledger,
             db,
@@ -220,6 +231,12 @@ class Chat:
                 if button.label == label:
                     return button
         raise LookupError(f"no button {label!r} on {msg.text!r}")
+
+    @property
+    def public_key_pem(self) -> bytes:
+        from app.ledger.keys import public_key_pem
+
+        return public_key_pem(self.signing_key)
 
     @property
     def replies(self) -> list[str]:
