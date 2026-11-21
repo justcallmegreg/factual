@@ -268,9 +268,9 @@ As a member, I want to create and list projects with short names, so that I can 
 
 **Tasks**
 
-- [ ] Implement the three commands and the name check.
-- [ ] Build the `project` projection.
-- [ ] Test valid names, invalid names, duplicates and archive.
+- [x] Implement the three commands and the name check.
+- [x] Build the `project` projection.
+- [x] Test valid names, invalid names, duplicates and archive.
 
 ### FAC-13 · Filing with the project picker
 

@@ -94,6 +94,23 @@ class Ledger:
                 created_at=row.created_at,
             )
 
+    async def find(self, conn: AsyncConnection, source_event: str) -> Appended | None:
+        """The entry a platform event produced, if it was recorded before."""
+        row = (
+            await conn.execute(
+                select(ledger_entry).where(ledger_entry.c.source_event == source_event)
+            )
+        ).first()
+        if row is None:
+            return None
+        return Appended(
+            seq=int(row.seq),
+            entry_bytes=bytes(row.entry),
+            entry_hash=bytes(row.entry_hash),
+            chain_hash=bytes(row.chain_hash),
+            duplicate=True,
+        )
+
     async def head(self, conn: AsyncConnection) -> tuple[int, bytes]:
         row = (
             await conn.execute(

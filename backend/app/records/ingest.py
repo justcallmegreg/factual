@@ -41,10 +41,11 @@ def _blob_dict(blob: BlobRef) -> dict:
 class Ingestion:
     """The EventSink of the core."""
 
-    def __init__(self, ledger: Ledger, db: Database, *, timezone: str) -> None:
+    def __init__(self, ledger: Ledger, db: Database, *, timezone: str, commands=None) -> None:
         self.ledger = ledger
         self.db = db
         self.zone = ZoneInfo(timezone)
+        self.commands = commands  # handles commands and taps; None records only
 
     async def handle(self, event: SourceEvent) -> None:
         if event.kind == "record.created":
@@ -53,6 +54,8 @@ class Ingestion:
             await self._edit(event)
         elif event.kind == "command" and self._is_log_with_text(event):
             await self._record(event, text=event.command.args)
+        elif self.commands is not None:
+            await self.commands.handle(event)
         else:
             log.debug("event left to the command layer", extra=ctx(kind=event.kind))
 
