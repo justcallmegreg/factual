@@ -7,6 +7,7 @@ its part here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from app.api.health import router as health_router
 from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
+from app.storage.db import Database, run_migrations
 
 DESCRIPTION = (
     "Factual turns what you send to one Telegram chat into tamper-evident evidence "
@@ -26,16 +28,29 @@ DESCRIPTION = (
 )
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build the FastAPI app. Settings are read at start-up unless injected."""
+def create_app(settings: Settings | None = None, *, start_services: bool = True) -> FastAPI:
+    """Build the FastAPI app.
+
+    Settings are read at start-up unless injected. With `start_services` the lifespan
+    applies the migrations and opens the database; route tests that need neither pass
+    False.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = active = settings if settings is not None else Settings.load()
         configure_logging(active.log_level, app.version, secrets=active.secret_values())
-        logging.getLogger("factual").info("factual backend started")
+        log = logging.getLogger("factual")
+        db: Database | None = None
+        if start_services:
+            log.info("applying migrations")
+            await asyncio.to_thread(run_migrations, active.database_url)
+            app.state.db = db = Database(active.database_url)
+        log.info("factual backend started")
         yield
-        logging.getLogger("factual").info("factual backend stopped")
+        if db is not None:
+            await db.dispose()
+        log.info("factual backend stopped")
 
     app = FastAPI(
         title="Factual",

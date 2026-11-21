@@ -10,7 +10,7 @@ from tests.conftest import BACKEND_DIR
 def client(settings):
     from app.main import create_app
 
-    with TestClient(create_app(settings=settings)) as client:
+    with TestClient(create_app(settings=settings, start_services=False)) as client:
         yield client
 
 
@@ -31,7 +31,7 @@ def test_app_version_env_overrides_the_file(settings, clean_env):
     from app.main import create_app
 
     clean_env.setenv("APP_VERSION", "9.9.9")
-    with TestClient(create_app(settings=settings)) as client:
+    with TestClient(create_app(settings=settings, start_services=False)) as client:
         assert client.get("/version").json() == {"version": "9.9.9"}
 
 
@@ -48,7 +48,7 @@ def test_the_service_refuses_to_start_when_a_required_variable_is_missing(requir
     required_env.chdir(tmp_path)  # no .env file here
     required_env.delenv("DATABASE_URL")
     with pytest.raises(Exception) as excinfo:
-        with TestClient(create_app()):
+        with TestClient(create_app(start_services=False)):
             pass
     assert "DATABASE_URL" in str(excinfo.value)
 
@@ -57,6 +57,6 @@ def test_the_app_carries_title_and_version(settings):
     from app.core.version import read_version
     from app.main import create_app
 
-    app = create_app(settings=settings)
+    app = create_app(settings=settings, start_services=False)
     assert app.title == "Factual"
     assert app.version == read_version()

@@ -12,6 +12,7 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from sqlalchemy.engine import make_url
 
 BACKEND = Path(__file__).resolve().parents[1]
 VERSION = (BACKEND.parent / "VERSION.txt").read_text(encoding="utf-8").strip()
@@ -153,9 +154,11 @@ def test_the_image_has_a_health_check_on_healthz(built_image):
 
 
 @needs_docker
-def test_the_container_serves_the_version_from_the_build_argument(built_image):
+def test_the_container_serves_the_version_from_the_build_argument(built_image, database_url):
     env_file = BACKEND / ".env.example"
     name = f"factual-test-{uuid.uuid4().hex[:8]}"
+    # the container reaches the fresh test database on the host
+    db_url = make_url(database_url).set(host="host.docker.internal")
     run = subprocess.run(
         [
             "docker",
@@ -166,8 +169,12 @@ def test_the_container_serves_the_version_from_the_build_argument(built_image):
             name,
             "-p",
             "0:8000",
+            "--add-host",
+            "host.docker.internal:host-gateway",
             "--env-file",
             str(env_file),
+            "-e",
+            f"DATABASE_URL={db_url.render_as_string(hide_password=False)}",
             built_image,
         ],
         capture_output=True,

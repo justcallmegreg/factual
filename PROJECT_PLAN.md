@@ -178,10 +178,10 @@ As a developer, I want the PostgreSQL schema under migration control, so that ev
 
 **Tasks**
 
-- [ ] Add SQLAlchemy and Alembic with the first migration: `ledger_entry`, `evidence_payload` and `project`.
-- [ ] Create the runtime role, the owner role and the insert-only triggers.
-- [ ] Add the readiness route.
-- [ ] Test that an update or a delete on an evidence table fails.
+- [x] Add SQLAlchemy and Alembic with the first migration: `ledger_entry`, `evidence_payload` and `project`.
+- [x] Create the runtime role, the owner role and the insert-only triggers.
+- [x] Add the readiness route.
+- [x] Test that an update or a delete on an evidence table fails.
 
 ### FAC-08 · Ledger entries and hash chain
 

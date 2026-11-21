@@ -61,7 +61,7 @@ def test_make_has_swagger_and_swagger_check_targets():
 def test_swagger_ui_serves_the_same_api_with_the_version(settings):
     from app.main import create_app
 
-    with TestClient(create_app(settings=settings)) as client:
+    with TestClient(create_app(settings=settings, start_services=False)) as client:
         docs = client.get("/docs")
         assert docs.status_code == 200
         assert "swagger-ui" in docs.text and "/openapi.json" in docs.text

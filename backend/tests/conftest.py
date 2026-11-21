@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import uuid
 from pathlib import Path
 
 import pytest
+
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL", "postgresql://factual:factual@localhost:5432/factual"
+)
 
 REQUIRED_ENV = {
     "TELEGRAM_BOT_TOKEN": "123456:TEST-TOKEN",
@@ -89,3 +95,57 @@ def pytest_collection_modifyitems(config, items):
             for item in items:
                 if item.get_closest_marker("docker"):
                     item.add_marker(skip)
+
+
+# --- PostgreSQL ------------------------------------------------------------------------
+# The admin connection (TEST_DATABASE_URL) creates one migrated template database per
+# session; each test that needs a clean database clones the template, which takes
+# milliseconds and needs no migration run. Evidence tables cannot be emptied (that is
+# the point), so a clone per test is the only way to isolate them.
+
+
+def _admin_connect():
+    import psycopg
+
+    return psycopg.connect(TEST_DATABASE_URL, autocommit=True)
+
+
+def _url_for(name: str) -> str:
+    from sqlalchemy.engine import make_url
+
+    return make_url(TEST_DATABASE_URL).set(database=name).render_as_string(hide_password=False)
+
+
+@pytest.fixture(scope="session")
+def template_database():
+    """A database migrated to head, used as the template for per-test clones."""
+    from app.storage.db import run_migrations
+
+    name = f"factual_tpl_{uuid.uuid4().hex[:8]}"
+    with _admin_connect() as conn:
+        conn.execute(f'CREATE DATABASE "{name}"')
+    try:
+        run_migrations(_url_for(name))
+        yield name
+    finally:
+        with _admin_connect() as conn:
+            conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+@pytest.fixture
+def database_url(template_database):
+    """A fresh clone of the migrated template; dropped after the test."""
+    name = f"factual_t_{uuid.uuid4().hex[:8]}"
+    with _admin_connect() as conn:
+        conn.execute(f'CREATE DATABASE "{name}" TEMPLATE "{template_database}"')
+    try:
+        yield _url_for(name)
+    finally:
+        with _admin_connect() as conn:
+            conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+@pytest.fixture
+def db_settings(settings, database_url):
+    """Settings whose DATABASE_URL points at a fresh test database."""
+    return settings.model_copy(update={"database_url": database_url})

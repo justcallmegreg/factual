@@ -120,7 +120,7 @@ def test_the_app_configures_logging_at_start_up(settings, monkeypatch):
     from app.main import create_app
 
     settings = settings.model_copy(update={"log_level": "ERROR"})
-    with TestClient(create_app(settings=settings)):
+    with TestClient(create_app(settings=settings, start_services=False)):
         root = logging.getLogger()
         assert root.level == logging.ERROR
         assert any(isinstance(h.formatter, EcsFormatter) for h in root.handlers)
