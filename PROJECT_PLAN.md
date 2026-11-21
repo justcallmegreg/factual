@@ -322,9 +322,9 @@ As a member, I want to check a record and the health of the system from the chat
 
 **Tasks**
 
-- [ ] Implement the fast verification for one entry.
-- [ ] Implement the three commands.
-- [ ] Publish the command menu at start-up.
+- [x] Implement the fast verification for one entry.
+- [x] Implement the three commands.
+- [x] Publish the command menu at start-up.
 
 **Gate 1 · Core loop works.** You send a note, see ✍, file it with one tap and find it with `/ask`; the chain verifies after a crash.
 

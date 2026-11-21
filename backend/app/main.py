@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.commands.dispatcher import CommandDispatcher
+from app.commands.menu import COMMANDS
 from app.connectors.base import Connector
 from app.connectors.telegram.api import AiogramTelegramApi
 from app.connectors.telegram.connector import TelegramConnector, TelegramSettings
@@ -77,6 +78,8 @@ def create_app(
             app.state.ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
             factory = connector_factory or build_telegram_connector
             app.state.connector = connector = factory(active)
+            if hasattr(connector, "commands_menu"):
+                connector.commands_menu = list(COMMANDS)
             filing = Filing(app.state.ledger, db, connector, timezone=active.timezone)
             commands = CommandDispatcher(
                 app.state.ledger, db, connector, timezone=active.timezone, filing=filing

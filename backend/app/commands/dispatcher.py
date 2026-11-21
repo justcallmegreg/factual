@@ -32,12 +32,18 @@ class CommandDispatcher:
         self._register_builtin()
 
     def _register_builtin(self) -> None:
-        from app.commands import ask, project
+        from app.commands import ask, help, project, status, verify
         from app.commands import log as log_command
 
         self.handlers["project"] = project.handle
         self.handlers["log"] = log_command.handle
         self.handlers["ask"] = ask.handle
+        self.handlers["verify"] = verify.handle
+        self.handlers["status"] = status.handle
+        self.handlers["help"] = help.handle
+        self.handlers["start"] = help.handle
+        for later in ("proof", "respond"):
+            self.handlers.setdefault(later, help.not_yet(later))
         for prefix in ("p", "chg", "more", "s", "sdone"):
             self.choice_handlers[prefix] = log_command.tap
 

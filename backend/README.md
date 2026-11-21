@@ -40,6 +40,10 @@ The real-group test from the specification (does every mark notify the members, 
 | Do members get a notification for each ✍ mark? | not yet observed |
 | Does a busy chat (20 messages in a minute) hit rate limits, and does the queue recover? | not yet observed |
 
+### Commands
+
+`/help` (and `/start`) print the command list; the same list is published as Telegram's command menu with `setMyCommands` at start-up, from `app/commands/menu.py`. `/verify`, as a reply or with an entry number, recomputes the entry hash, the payload commitment and the chain link of one entry and shows its filing history and versions. `/status` shows the polling state, the ledger head, the records without a project and, as later stories add them, the last seal, the key fingerprint and the last audit. Commands of a later phase (`/proof`, `/respond`) answer that they are not available yet.
+
 ### Search
 
 `/ask <question>` searches record text, captions and (later) derived text with PostgreSQL full-text search: the `search_chunk` projection holds one row per text or caption with a generated `english` tsvector and a GIN index. The question's words are stemmed and combined with OR, hits are ranked with `ts_rank_cd`, one hit per record; when the question names a project, that project's records come first. The renderer prints only stored text with the entry number, the project, the origin, the time and the integrity status. With no match, Thoth lists the words it searched for (stop words left out).

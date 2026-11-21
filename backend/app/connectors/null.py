@@ -50,3 +50,6 @@ class NullConnector:
 
     async def acknowledge(self, ref: MessageRef) -> None:
         self.acknowledged.append(ref)
+
+    def status_line(self) -> str:
+        return "ok (null connector)"

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import psycopg
 
@@ -94,6 +95,8 @@ class Chat:
         """Send a message or a command from a member; returns the message id."""
         raw = self._raw_message(text, user=user, reply_to=reply_to)
         event = map_update(raw, capture_chat_id=CAPTURE_CHAT_ID, bot_username="FactualThothBot")
+        # like the Telegram connector: the ✍ callback is the connector's acknowledge
+        event = replace(event, ack=partial(self.connector.acknowledge, event.message))
         await self.ingestion.handle(event)
         return raw["message"]["message_id"]
 

@@ -135,6 +135,9 @@ class TelegramConnector:
         self._told_unconfigured: set[int | str] = set()
         self._left: set[int | str] = set()
         self.acks = AckQueue(api, settings.ack_reaction, retry_delay=max(retry_delay, 0.01))
+        self.commands_menu: list[tuple[str, str]] = []  # published with setMyCommands at start
+        self.last_poll_at: float | None = None
+        self.last_update_at: float | None = None
 
     # --- polling -----------------------------------------------------------------------
 
@@ -142,6 +145,11 @@ class TelegramConnector:
         self._stopping = False
         if self.settings.bot_username is None:
             await self._learn_identity()
+        if self.commands_menu:
+            try:
+                await self.api.set_my_commands(self.commands_menu)
+            except Exception as exc:  # noqa: BLE001 — the menu is a convenience
+                log.warning("setMyCommands failed: %s", type(exc).__name__)
         while not self._stopping:
             handled = await self.poll_once(sink)
             if not handled:
@@ -170,6 +178,9 @@ class TelegramConnector:
             return 0
         self._failures = 0
         self._polls += 1
+        self.last_poll_at = time.time()
+        if updates:
+            self.last_update_at = time.time()
         if self._polls == 1:
             self._note_backlog(updates)
         handled = 0
@@ -243,6 +254,14 @@ class TelegramConnector:
             log.debug(
                 "update ignored", extra=ctx(update_id=ignored.update_id, reason=ignored.reason)
             )
+
+    def status_line(self) -> str:
+        """For /status: whether polling runs and when Telegram last answered."""
+        if self.last_poll_at is None:
+            return "not started" if self._failures == 0 else f"failing ({self._failures} attempts)"
+        ago = int(time.time() - self.last_poll_at)
+        state = "ok" if self._failures == 0 else f"retrying ({self._failures} failures)"
+        return f"{state}, last check {ago} s ago"
 
     # --- outbound ------------------------------------------------------------------------
 
