@@ -89,6 +89,12 @@ def readme(manifest: dict) -> str:
                 else "certificate not readable"
             )
             lines.append(f"  {a['token']}: {a['url']} — {cert}.")
+            if a.get("root_subject"):
+                lines.append(
+                    f'    Root: "{a["root_subject"]}", fingerprint {a["root_fingerprint"]}. Compare it with the root'
+                    " certificate the authority publishes: the chain in this pack comes from the token"
+                    " itself and proves consistency, not independence."
+                )
             if a["test"]:
                 lines.append(
                     "    WARNING: TEST AUTHORITY. It runs on the pack maker's own machine or signs itself;"
@@ -158,6 +164,9 @@ def readme(manifest: dict) -> str:
         "  - Only the requested records and the entries that belong to them are disclosed. A later",
         "    edit, reply or correction outside this pack is not shown; ask for a fresh pack when",
         "    that matters.",
+        "  - A reply or a forwarded message carries, in its raw payload, what it quotes: the text of",
+        "    the message replied to, or the forwarded original's sender and time. Disclosing such a",
+        "    record discloses that quoted content too.",
     ]
     if manifest.get("unsealed"):
         lines += [

@@ -328,17 +328,75 @@ def run_openssl(args, cwd):
     return result.returncode, result.stdout + result.stderr
 
 
+def chain_summary(chain_path, cwd):
+    """Leaf and root of a PEM chain file, through openssl x509: subject, issuer, root_subject,
+    root_fingerprint (sha256:…, over the root's DER) and count. Empty when unreadable."""
+    try:
+        text = (Path(cwd) / chain_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    blocks = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", text, re.S)
+    certs = []
+    with tempfile.TemporaryDirectory() as d:
+        for n, block in enumerate(blocks):
+            one = Path(d) / ("%d.pem" % n)
+            one.write_text(block + "\n", encoding="utf-8")
+            code, out = run_openssl(
+                [
+                    "x509",
+                    "-in",
+                    str(one),
+                    "-noout",
+                    "-subject",
+                    "-issuer",
+                    "-fingerprint",
+                    "-sha256",
+                ],
+                cwd,
+            )
+            if code != 0:
+                continue
+            subject = re.search(r"subject=\s*(.+)", out)
+            issuer = re.search(r"issuer=\s*(.+)", out)
+            fingerprint = re.search(r"Fingerprint=([0-9A-Fa-f:]+)", out)
+            certs.append(
+                {
+                    "subject": subject.group(1).strip() if subject else None,
+                    "issuer": issuer.group(1).strip() if issuer else None,
+                    "fingerprint": (
+                        "sha256:" + fingerprint.group(1).replace(":", "").lower()
+                        if fingerprint
+                        else None
+                    ),
+                }
+            )
+    if not certs:
+        return {}
+    issuers = {c["issuer"] for c in certs}
+    leaves = [c for c in certs if c["subject"] not in issuers] or [certs[0]]
+    leaf = root = leaves[0]
+    by_subject = {c["subject"]: c for c in certs}
+    seen = set()
+    while (
+        root["issuer"] != root["subject"]
+        and root["issuer"] in by_subject
+        and root["subject"] not in seen
+    ):
+        seen.add(root["subject"])
+        root = by_subject[root["issuer"]]
+    return {
+        "subject": leaf["subject"],
+        "issuer": leaf["issuer"],
+        "root_subject": root["subject"],
+        "root_fingerprint": root["fingerprint"],
+        "count": len(certs),
+    }
+
+
 def certificate_names(chain_path, cwd):
-    """(subject, issuer) of the first certificate in a PEM file, through openssl x509."""
-    code, out = run_openssl(["x509", "-in", str(chain_path), "-noout", "-subject", "-issuer"], cwd)
-    if code != 0:
-        return None, None
-    subject = re.search(r"subject=\s*(.+)", out)
-    issuer = re.search(r"issuer=\s*(.+)", out)
-    return (
-        subject.group(1).strip() if subject else None,
-        issuer.group(1).strip() if issuer else None,
-    )
+    """(subject, issuer) of the leaf certificate in a PEM file."""
+    summary = chain_summary(chain_path, cwd)
+    return summary.get("subject"), summary.get("issuer")
 
 
 def key_fingerprint(public_key):
@@ -347,15 +405,17 @@ def key_fingerprint(public_key):
 
 
 def tsa_epoch(text):
-    """`openssl ts -reply -text` prints `Nov 21 06:40:00 2026 GMT`; seconds since the epoch, or None."""
+    """Seconds since the epoch from `Nov 21 06:40:00 2026 GMT` (openssl ts -reply -text) or from
+    the manifest's `2026-11-21T06:40:00Z`; None when neither form matches."""
     if not text:
         return None
-    try:
-        return calendar.timegm(
-            time.strptime(re.sub(r"\.\d+", "", text.strip()), "%b %d %H:%M:%S %Y GMT")
-        )
-    except ValueError:
-        return None
+    cleaned = re.sub(r"\.\d+", "", text.strip())
+    for pattern in ("%b %d %H:%M:%S %Y GMT", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return calendar.timegm(time.strptime(cleaned, pattern))
+        except ValueError:
+            continue
+    return None
 
 
 def tsa_time(token_path, cwd):
@@ -414,6 +474,12 @@ def verify_pack(root, report):
                 )
             else:
                 report.fail("payload commitment E%d" % seq, "the payload does not match the entry")
+        else:
+            report.fail(
+                "payload E%d" % seq,
+                "the pack lists this entry without its payload: its content cannot be checked, "
+                "and the labels in README.txt and manifest.json are not evidence",
+            )
 
     seals = {}
     for item in manifest["seals"]:
@@ -487,15 +553,23 @@ def verify_pack(root, report):
                 report.skip(label, "not checked: " + out)
             elif code == 0 and "Verification: OK" in out:
                 when = tsa_time(anchor["token"], root) or anchor.get("gen_time", "?")
-                subject, issuer = certificate_names(anchor["chain"], root)
+                summary = chain_summary(anchor["chain"], root)
                 who = "%s (%s)" % (
                     anchor.get("url") or anchor.get("issuer", "?"),
-                    subject or "certificate unreadable",
+                    summary.get("subject") or "certificate unreadable",
                 )
                 detail = "openssl ts -verify: OK; time %s; authority %s%s" % (when, who, at_note)
+                if summary.get("root_subject"):
+                    detail += (
+                        "; root %s %s; compare this fingerprint with the root the authority publishes"
+                        % (
+                            summary["root_subject"],
+                            summary.get("root_fingerprint"),
+                        )
+                    )
                 if anchor.get("renews"):
                     detail += "; a new token over %s" % anchor["renews"]
-                if is_test_authority(anchor, subject, issuer):
+                if is_test_authority(anchor, summary):
                     detail += "; WARNING: a test or self-run authority, not independent"
                 report.ok(label, detail)
                 if anchor.get("renews"):
@@ -541,12 +615,19 @@ def verify_pack(root, report):
         path = root / item["file"]
         digest = sha256(path.read_bytes()).hex()
         entry = entries.get(item["entry_seq"])
-        recorded = item.get("sha256_plain")
-        if entry is not None and (root / ("payloads/%d.json" % item["entry_seq"])).exists():
-            payload = json.loads(
-                (root / ("payloads/%d.json" % item["entry_seq"])).read_text(encoding="utf-8")
+        payload_path = root / ("payloads/%d.json" % item["entry_seq"])
+        if entry is None or not payload_path.exists():
+            report.fail(
+                "attachment %s" % item["file"],
+                "its stored-copy entry E%d or that entry's payload is not in the pack: the hash "
+                "in the manifest is only a label" % item["entry_seq"],
             )
-            recorded = payload["payload"].get("sha256_plain", recorded)
+            continue
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        recorded = payload["payload"].get("sha256_plain")
+        if recorded is None:
+            report.fail("attachment %s" % item["file"], "its stored-copy entry names no hash")
+            continue
         if digest == recorded:
             report.ok(
                 "attachment %s" % item["file"], "SHA-256 matches entry E%d" % item["entry_seq"]
@@ -556,14 +637,16 @@ def verify_pack(root, report):
     return manifest, entries, seals
 
 
-def is_test_authority(anchor, subject, issuer):
-    """A timestamp from the pack maker's own machine or a self-signed test certificate proves nothing."""
+def is_test_authority(anchor, summary):
+    """A timestamp from the pack maker's own machine, a lone self-signed certificate or a
+    certificate that calls itself a test proves nothing."""
     url = (anchor.get("url") or anchor.get("issuer") or "").lower()
     if "127.0.0.1" in url or "localhost" in url:
         return True
-    if subject and issuer and subject == issuer:
+    subject = summary.get("subject") or ""
+    if summary.get("count") == 1 and subject and subject == summary.get("issuer"):
         return True
-    return bool(subject and "test" in subject.lower())
+    return "test" in subject.lower() or "test" in (summary.get("root_subject") or "").lower()
 
 
 def conclusion(manifest, seals, root):
@@ -590,9 +673,10 @@ def conclusion(manifest, seals, root):
         warnings = []
         for anchor in item.get("anchors", []):
             when = tsa_time(anchor["token"], root) or anchor.get("gen_time")
-            subject, issuer = certificate_names(anchor["chain"], root)
+            summary = chain_summary(anchor["chain"], root)
+            subject = summary.get("subject")
             who = anchor.get("url") or anchor.get("issuer", "?")
-            if is_test_authority(anchor, subject, issuer):
+            if is_test_authority(anchor, summary):
                 warnings.append(who)
             if anchor.get("renews"):
                 if when:

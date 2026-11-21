@@ -213,6 +213,13 @@ class PackBuilder:
                     }
                     token_names: dict[int, str] = {}
                     for n, anchor in enumerate(anchors, start=1):
+                        token_name = f"seals/{sealed.no}-{n}.tsr"
+                        token_names[int(anchor.id)] = token_name
+                        chain_name = (
+                            f"tsa/chain-{n}.pem"
+                            if len(seals_used) == 0
+                            else f"tsa/chain-{sealed.no}-{n}.pem"
+                        )
                         manifest["authorities"].append(
                             describe_authority(
                                 sealed.no,
@@ -220,14 +227,8 @@ class PackBuilder:
                                 anchor.issuer,
                                 bytes(anchor.chain_pem or b""),
                                 anchor.gen_time,
+                                chain_name,
                             )
-                        )
-                        token_name = f"seals/{sealed.no}-{n}.tsr"
-                        token_names[int(anchor.id)] = token_name
-                        chain_name = (
-                            f"tsa/chain-{n}.pem"
-                            if len(seals_used) == 0
-                            else f"tsa/chain-{sealed.no}-{n}.pem"
                         )
                         files[token_name] = bytes(anchor.proof)
                         files[chain_name] = bytes(anchor.chain_pem or b"")
@@ -359,38 +360,65 @@ class PackBuilder:
         return Pack(filename, buffer.getvalue(), requested, manifest["unsealed"])
 
 
-def describe_authority(seal_no: int, n: int, url: str, chain_pem: bytes, gen_time) -> dict:
-    """Who signed a timestamp: certificate subject, issuer and validity, plus a test warning."""
-    from cryptography import x509
+def _leaf_and_root(certs):
+    """The leaf (issued by no other certificate in the set) and the root it chains up to."""
+    by_subject = {c.subject.rfc4514_string(): c for c in certs}
+    issuers = {c.issuer.rfc4514_string() for c in certs}
+    leaves = [c for c in certs if c.subject.rfc4514_string() not in issuers] or [certs[0]]
+    leaf = root = leaves[0]
+    seen: set[str] = set()
+    while (
+        root.issuer.rfc4514_string() != root.subject.rfc4514_string()
+        and root.issuer.rfc4514_string() in by_subject
+        and root.subject.rfc4514_string() not in seen
+    ):
+        seen.add(root.subject.rfc4514_string())
+        root = by_subject[root.issuer.rfc4514_string()]
+    return leaf, root
 
-    subject = issuer = valid_from = valid_to = None
+
+def describe_authority(
+    seal_no: int, n: int, url: str, chain_pem: bytes, gen_time, chain_name: str
+) -> dict:
+    """Who signed a timestamp: the leaf certificate, its validity, the root it chains to
+    (with the fingerprint to compare against the authority's published root), a test flag."""
+    import hashlib
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+
+    subject = issuer = valid_from = valid_to = root_subject = root_fingerprint = None
     try:
         certs = x509.load_pem_x509_certificates(chain_pem) if chain_pem else []
     except ValueError:
         certs = []
     if certs:
-        cert = certs[0]
+        cert, root = _leaf_and_root(certs)
         subject = cert.subject.rfc4514_string()
         issuer = cert.issuer.rfc4514_string()
         before = getattr(cert, "not_valid_before_utc", None) or cert.not_valid_before
         after = getattr(cert, "not_valid_after_utc", None) or cert.not_valid_after
         valid_from, valid_to = before.strftime("%Y-%m-%d"), after.strftime("%Y-%m-%d")
+        root_subject = root.subject.rfc4514_string()
+        der = root.public_bytes(serialization.Encoding.DER)
+        root_fingerprint = "sha256:" + hashlib.sha256(der).hexdigest()
     host = host_of(url)
     test = (
         host in ("127.0.0.1", "localhost")
-        or (subject is not None and subject == issuer)
+        or (len(certs) == 1 and subject is not None and subject == issuer)
         or bool(subject and "test" in subject.lower())
+        or bool(root_subject and "test" in root_subject.lower())
     )
     return {
         "seal_no": seal_no,
         "token": f"seals/{seal_no}-{n}.tsr",
-        "chain": f"tsa/chain-{n}.pem"
-        if seal_no == min(seal_no, seal_no)
-        else f"tsa/chain-{seal_no}-{n}.pem",
+        "chain": chain_name,
         "url": url,
         "host": host,
         "subject": subject,
         "issuer": issuer,
+        "root_subject": root_subject,
+        "root_fingerprint": root_fingerprint,
         "valid_from": valid_from,
         "valid_to": valid_to,
         "gen_time": gen_time.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if gen_time else None,
