@@ -155,18 +155,25 @@ def test_the_image_has_a_health_check_on_healthz(built_image):
 
 @needs_docker
 def test_the_container_serves_the_version_from_the_build_argument(
-    built_image, database_url, key_files
+    built_image, database_url, key_files, tmp_path
 ):
     env_file = BACKEND / ".env.example"
     name = f"factual-test-{uuid.uuid4().hex[:8]}"
     # the container reaches the fresh test database on the host
     db_url = make_url(database_url).set(host="host.docker.internal")
+    # the image runs as uid 10001 and a Linux bind mount keeps the host's modes, so the
+    # 0600 test keys are copied into a directory the container's user can read
+    secrets = tmp_path / "container-secrets"
+    secrets.mkdir(mode=0o755)
+    for source in key_files:
+        copied = secrets / source.name
+        copied.write_bytes(source.read_bytes())
+        copied.chmod(0o644)
     run = subprocess.run(
         [
             "docker",
             "run",
             "-d",
-            "--rm",
             "--name",
             name,
             "-p",
@@ -174,7 +181,7 @@ def test_the_container_serves_the_version_from_the_build_argument(
             "--add-host",
             "host.docker.internal:host-gateway",
             "-v",
-            f"{key_files[0].parent}:/app/secrets:ro",
+            f"{secrets}:/app/secrets:ro",
             "--env-file",
             str(env_file),
             "-e",
@@ -210,7 +217,22 @@ def test_the_container_serves_the_version_from_the_build_argument(
             logs = subprocess.run(
                 ["docker", "logs", name], capture_output=True, text=True, check=False
             )
-            pytest.fail(f"container never answered: {last}\n{logs.stdout}\n{logs.stderr}")
+            state = subprocess.run(
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    "{{.State.Status}} exit={{.State.ExitCode}}",
+                    name,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            pytest.fail(
+                f"container never answered: {last}\nstate: {state.stdout.strip()}\n"
+                f"{logs.stdout}\n{logs.stderr}"
+            )
         health = subprocess.run(
             ["docker", "logs", name], capture_output=True, text=True, check=False
         ).stdout
