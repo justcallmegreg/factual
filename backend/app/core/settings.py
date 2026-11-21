@@ -10,6 +10,7 @@ from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+MIN_SECRET_LENGTH = 8
 
 
 class ConfigurationError(RuntimeError):
@@ -94,15 +95,19 @@ class Settings(BaseSettings):
         return value
 
     def secret_values(self) -> list[str]:
-        """Every secret the logs must never show."""
+        """Every credential the logs must never show.
+
+        Identifiers (bucket, access key id) are not secrets. Values shorter than 8
+        characters are left out: redacting a short, common word would blank out
+        ordinary text in every line.
+        """
         candidates = (
             self.telegram_bot_token,
             self.anthropic_api_key,
-            self.s3_access_key_id,
             self.s3_secret_access_key,
             self.api_token,
         )
-        return [value for value in candidates if value]
+        return [value for value in candidates if value and len(value) >= MIN_SECRET_LENGTH]
 
     @classmethod
     def load(cls, env_file: str | Path | None = ".env") -> Settings:

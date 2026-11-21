@@ -129,10 +129,10 @@ As a developer, I want one command for each daily task, so that building and run
 
 **Tasks**
 
-- [ ] Write the `Dockerfile` with the `VERSION` build argument.
-- [ ] Write `docker-compose.yml` for the backend, PostgreSQL and the S3-compatible store.
-- [ ] Write the `Makefile` with `help`, `build`, `up`, `down`, `run`, `test` and `lint`.
-- [ ] Run the image on an Intel or AMD machine and on an ARM machine.
+- [x] Write the `Dockerfile` with the `VERSION` build argument.
+- [x] Write `docker-compose.yml` for the backend, PostgreSQL and the S3-compatible store.
+- [x] Write the `Makefile` with `help`, `build`, `up`, `down`, `run`, `test` and `lint`.
+- [x] Run the image on an Intel or AMD machine and on an ARM machine.
 
 ### FAC-05 · swagger.json generation
 

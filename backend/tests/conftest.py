@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -80,5 +79,13 @@ def env_names_in(path: Path) -> set[str]:
     return names
 
 
-def _unused():  # keeps os imported for fixtures that need it later
-    return os
+def pytest_collection_modifyitems(config, items):
+    """Tests marked `docker` build and run the image; skip them without a daemon."""
+    if any(item.get_closest_marker("docker") for item in items):
+        from tests.test_container import docker_available
+
+        if not docker_available():
+            skip = pytest.mark.skip(reason="no Docker daemon")
+            for item in items:
+                if item.get_closest_marker("docker"):
+                    item.add_marker(skip)

@@ -17,6 +17,8 @@ from typing import IO, Any
 
 import ecs_logging
 
+from app.core.settings import MIN_SECRET_LENGTH
+
 SERVICE_NAME = "factual-backend"
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 REDACTED = "[redacted]"
@@ -58,7 +60,7 @@ class EcsFormatter(ecs_logging.StdlibFormatter):
     def __init__(self, version: str, secrets: Iterable[str] = ()) -> None:
         super().__init__(
             extra={"service": {"name": SERVICE_NAME, "version": version}},
-            exclude_fields=["process", "log.original"],
+            exclude_fields=["process", "log.original", "color_message"],
         )
         self.version = version
         self.secrets: set[str] = set()
@@ -66,7 +68,7 @@ class EcsFormatter(ecs_logging.StdlibFormatter):
 
     def add_secrets(self, secrets: Iterable[str]) -> None:
         for secret in secrets:
-            if secret:
+            if secret and len(secret) >= MIN_SECRET_LENGTH:
                 self.secrets.add(secret)
 
     def format(self, record: logging.LogRecord) -> str:

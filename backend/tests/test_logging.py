@@ -165,3 +165,26 @@ def test_python_m_app_refuses_to_start_without_a_required_variable(
     required_env.delenv("TSA_URLS")
     monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: pytest.fail("must not serve"))
     assert entrypoint.main([]) == 2
+
+
+def test_short_values_and_identifiers_are_not_redacted(settings):
+    """A 7-letter access key id must not blank out `factual-backend` in every line."""
+    from app.core.logging import configure_logging
+
+    settings = settings.model_copy(update={"s3_access_key_id": "factual", "api_token": "short"})
+    buf = io.StringIO()
+    configure_logging("INFO", version="0.1.0", stream=buf, secrets=settings.secret_values())
+    logging.getLogger("factual.demo").info("hello from factual")
+    (record,) = lines(buf)
+    assert record["service"]["name"] == "factual-backend"
+    assert record["message"] == "hello from factual"
+    assert "factual" not in settings.secret_values()
+    assert "short" not in settings.secret_values()
+
+
+def test_uvicorn_colour_message_is_dropped(captured):
+    logging.getLogger("uvicorn.error").info(
+        "Started server process [%d]", 1, extra={"color_message": "Started \x1b[36m%d\x1b[0m"}
+    )
+    (record,) = lines(captured)
+    assert "color_message" not in record

@@ -1,0 +1,57 @@
+# Development stack: the backend, PostgreSQL and RustFS as the S3-compatible store
+# (MinIO-compatible API with Object Lock; the minio/minio image is no longer published).
+# `make up` starts it with VERSION from ../VERSION.txt; `make down` stops it.
+# Keys and tokens come from .env (never committed; .env.example lists every variable).
+# .env keeps localhost addresses so that `make run` works on your machine; the
+# `environment` block below swaps in the Compose service names for the container.
+# Host ports: set BACKEND_PORT, POSTGRES_PORT or S3_PORT in your environment when
+# the defaults 8000, 5432 or 9000 are taken on your machine.
+name: factual
+services:
+  backend:
+    build:
+      context: .
+      args: {VERSION: "${VERSION:-dev}"}
+    image: "factual-backend:${VERSION:-dev}"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://factual:factual@postgres:5432/factual
+      S3_ENDPOINT: http://s3:9000
+      SIGNING_KEY_FILE: /run/secrets/signing-key.pem
+      MASTER_KEY_FILE: /run/secrets/master.key
+    ports: ["${BACKEND_PORT:-8000}:8000"]
+    volumes: ["./secrets:/run/secrets:ro"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      s3: {condition: service_healthy}
+    restart: unless-stopped
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: factual
+      POSTGRES_PASSWORD: factual
+      POSTGRES_DB: factual
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U factual -d factual"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+  s3:
+    image: rustfs/rustfs:1.0.6
+    environment:
+      RUSTFS_ACCESS_KEY: "${S3_ACCESS_KEY_ID:-factual}"
+      RUSTFS_SECRET_KEY: "${S3_SECRET_ACCESS_KEY:-factual-dev-secret}"
+    ports: ["${S3_PORT:-9000}:9000"]
+    volumes: ["s3data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  pgdata: {}
+  s3data: {}

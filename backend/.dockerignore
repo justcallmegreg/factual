@@ -1,0 +1,16 @@
+.venv
+.env
+.env.*
+secrets
+tests
+__pycache__
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.hypothesis
+*.md
+requirements*.in
+Makefile
+docker-compose.yml
+Dockerfile
+.dockerignore

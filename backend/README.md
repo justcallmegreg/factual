@@ -63,6 +63,29 @@ The service refuses to start when a required variable is missing and names the v
 | `swagger`, `swagger-check` | Regenerates `swagger.json`, or fails if it is out of date |
 | `test`, `lint` | Runs pytest and Ruff |
 
+## Running with Docker Compose
+
+`make up` builds the image and starts three services with `docker-compose.yml`:
+
+| Service | Image | Host port | Notes |
+| --- | --- | --- | --- |
+| `backend` | `factual-backend:<version>`, built from `Dockerfile` | `8000` | Reads `.env`; the Compose service names replace the localhost addresses |
+| `postgres` | `postgres:17` | `5432` | User, password and database `factual`; data in the `pgdata` volume |
+| `s3` | `rustfs/rustfs:1.0.6` | `9000` | S3-compatible store with Object Lock; credentials from `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`; data in the `s3data` volume |
+
+- `.env` keeps localhost addresses so that `make run` works on your machine; the Compose file swaps in the service names for the container. The keys in `./secrets` are mounted at `/run/secrets`.
+- When a default host port is taken, set `BACKEND_PORT`, `POSTGRES_PORT` or `S3_PORT` in your shell before `make up`, for example `BACKEND_PORT=18080 make up`.
+- `make down` stops the stack and keeps the volumes.
+- RustFS replaces MinIO, whose `minio/minio` image is no longer published on Docker Hub. It was checked with the calls Factual makes: a bucket created with Object Lock, a versioned upload with an SHA-256 checksum and a compliance retention date, a rejected upload with a wrong checksum, and a refused delete of a locked version.
+
+## Container image
+
+One image, one process: `python -m app` starts Uvicorn, and the app's lifespan starts the Telegram connector, the job workers, the sealer and the scheduler.
+
+- Built from `python:3.12-slim` with `openssl` for RFC 3161 checks; runs as the non-root user `factual` (uid 10001); exposes port 8000; health check on `GET /healthz`.
+- `make build` builds one image for `linux/amd64` and `linux/arm64` with `docker buildx`, tagged with the version from `../VERSION.txt`, which the build passes in as `APP_VERSION`. Docker Desktop and Docker Engine 29 or newer build both platforms without extra set-up; an older engine needs the containerd image store or a `docker-container` builder, which cannot load the result locally: run `make build BUILD_ARGS=--push` to push to a registry.
+- Architecture test on 21 November 2026: the `arm64` image ran natively on an Apple silicon Mac, and the `amd64` image ran on the same machine under emulation (`uname -m` reports `x86_64`); both answered `GET /version` as the non-root user. A run on a physical Intel or AMD server is still to be done.
+
 ## API and swagger.json
 
 FastAPI generates the OpenAPI description from the code. The running service serves it at `/openapi.json`, Swagger UI at `/docs` and ReDoc at `/redoc`. `make swagger` writes the same description to `swagger.json` without starting a server, and CI fails when the committed file is out of date. `swagger.json` is never edited by hand.
@@ -93,7 +116,7 @@ make test     # pytest
 make lint     # ruff check .
 ```
 
-The tests that touch the database need a PostgreSQL server; `make up` provides one.
+The tests that touch the database need a PostgreSQL server; `make up` provides one. Tests marked `docker` build and run the container image; they are skipped when no Docker daemon answers, and `pytest -m "not docker"` leaves them out on purpose.
 
 ## Migrations
 

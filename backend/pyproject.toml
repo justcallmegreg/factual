@@ -3,6 +3,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = ["docker: builds and runs the container image (skipped without a Docker daemon)"]
 
 [tool.ruff]
 line-length = 100

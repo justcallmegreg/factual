@@ -5,3 +5,4 @@ pytest-asyncio
 hypothesis
 ruff
 rfc8785
+pyyaml

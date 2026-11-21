@@ -21,6 +21,7 @@ venv/
 *.pem
 !tests/**/*.pem
 keys/
+secrets/
 
 # Tool scratch
 .superpowers/
