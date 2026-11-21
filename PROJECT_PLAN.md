@@ -346,11 +346,11 @@ As a member, I want photos, files and voice notes stored with the record, so tha
 
 **Tasks**
 
-- [ ] Implement the job queue on PostgreSQL with retries.
-- [ ] Implement download, hashing, encryption and upload as one stream.
-- [ ] Add the `blob` table and the attachment projection.
-- [ ] Handle albums and the 20 MB limit.
-- [ ] Test against an S3-compatible store, including a changed object.
+- [x] Implement the job queue on PostgreSQL with retries.
+- [x] Implement download, hashing, encryption and upload as one stream.
+- [x] Add the `blob` table and the attachment projection.
+- [x] Handle albums and the 20 MB limit.
+- [x] Test against an S3-compatible store, including a changed object.
 
 ### FAC-17 · Seals
 

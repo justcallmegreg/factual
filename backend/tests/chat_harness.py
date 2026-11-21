@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -41,14 +42,25 @@ class Chat:
     ingestion: Ingestion
     commands: CommandDispatcher
     clock: FakeClock
+    store: object = None
+    master_key: bytes = b""
+    worker: object = None
     next_update: int = field(default=600000000)
     next_message: int = field(default=20000)
 
     @classmethod
     async def open(
-        cls, database_url: str, *, timezone: str = "Europe/Amsterdam", **options
+        cls,
+        database_url: str,
+        *,
+        timezone: str = "Europe/Amsterdam",
+        attachments: bool = False,
+        **options,
     ) -> Chat:
+        from app.records.attachments import AttachmentFetcher, AttachmentIntake
         from app.records.filing import Filing
+        from app.storage.blobs import InMemoryObjectStore
+        from app.storage.jobs import JobWorker
 
         clock = FakeClock(datetime(2026, 10, 29, 13, 3, 12, tzinfo=UTC))
         db = Database(database_url)
@@ -58,8 +70,45 @@ class Chat:
         commands = CommandDispatcher(
             ledger, db, connector, timezone=timezone, filing=filing, clock=clock, **options
         )
-        ingestion = Ingestion(ledger, db, timezone=timezone, commands=commands, filing=filing)
-        return cls(database_url, db, ledger, connector, ingestion, commands, clock)
+        store = master_key = worker = intake = None
+        if attachments:
+            store = InMemoryObjectStore()
+            master_key = os.urandom(32)
+            intake = AttachmentIntake(max_bytes=20 * 1024 * 1024, clock=clock)
+            fetcher = AttachmentFetcher(
+                ledger,
+                db,
+                connector,
+                store,
+                master_key,
+                lock_days=3650,
+                clock=clock,
+                timezone=timezone,
+            )
+            worker = JobWorker(
+                db, {AttachmentFetcher.KIND: fetcher}, clock=clock, poll_interval=0.01
+            )
+        ingestion = Ingestion(
+            ledger,
+            db,
+            timezone=timezone,
+            commands=commands,
+            filing=filing,
+            attachments=intake,
+            connector=connector,
+        )
+        return cls(
+            database_url,
+            db,
+            ledger,
+            connector,
+            ingestion,
+            commands,
+            clock,
+            store,
+            master_key or b"",
+            worker,
+        )
 
     async def close(self) -> None:
         await self.db.dispose()

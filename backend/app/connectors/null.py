@@ -25,6 +25,7 @@ class NullConnector:
         self.sent: list[tuple[ChatRef, OutboundMessage]] = []
         self.message_ids: list[int] = []  # the id each sent (or edited) message got
         self.acknowledged: list[MessageRef] = []
+        self.files: dict[str, bytes] = {}  # file_id → bytes that fetch_blob streams
         self._next_id = 0
         self._stopped = asyncio.Event()
 
@@ -35,8 +36,11 @@ class NullConnector:
         self._stopped.set()
 
     async def fetch_blob(self, ref: BlobRef) -> AsyncIterator[bytes]:
-        if False:  # pragma: no cover — an empty async generator
-            yield b""
+        if ref.file_id not in self.files:
+            raise LookupError(f"no such file {ref.file_id}")
+        data = self.files[ref.file_id]
+        for start in range(0, len(data), 1024):
+            yield data[start : start + 1024]
 
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef:
         self.sent.append((chat, msg))

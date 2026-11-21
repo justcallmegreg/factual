@@ -50,6 +50,12 @@ The real-group test from the specification (does every mark notify the members, 
 
 Measured on 21 November 2026 with 50,000 seeded records (PostgreSQL 17 in Docker on an Apple silicon laptop, questions matching most records): median 247 ms, worst 359 ms per search. The test is `FACTUAL_PERF=1 pytest tests/test_search.py -k fifty_thousand`.
 
+### Attachments
+
+A photo, document, voice note or video is listed in the `record.created` entry and fetched at once by a job on the PostgreSQL queue (`SELECT … FOR UPDATE SKIP LOCKED`, retries after 30 s, 60 s, 2 min, … up to five attempts). The worker streams the file from Telegram and, in one pass, hashes the plaintext (SHA-256), encrypts it with its own AES-256-GCM key and hashes the ciphertext; the file key is wrapped by the master key from `MASTER_KEY_FILE`. The ciphertext is uploaded under `blobs/<sha256 of the plaintext>` with an `x-amz-checksum-sha256` the store verifies, into a bucket created with Object Lock (compliance mode, retention `S3_OBJECT_LOCK_DAYS`; `0` switches the lock off). The `attachment.stored` entry holds both hashes, the size, the detected type, the object key, the version id and the retention date; the wrapped key lives only in the `blob` table.
+
+A file over 20 MB (the cloud Bot API limit) gets an `attachment.unavailable` entry at ingestion and Thoth tells the sender at once. A download that keeps failing ends the same way after the last attempt, with a notice in the chat. Photos sent as one album form one record: every item is its own chained entry, but the later items reference the first one and their files join its record, which carries the one ✍ mark and the one picker.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

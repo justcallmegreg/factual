@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.connectors.base import BlobRef, NormalizedMessage, SourceEvent
+from app.connectors.base import BlobRef, NormalizedMessage, OutboundMessage, SourceEvent
 from app.core.logging import ctx
 from app.ledger.ledger import Ledger, iso_seconds
 from app.records.normalize import hashtags, stated_time
@@ -42,13 +42,23 @@ class Ingestion:
     """The EventSink of the core."""
 
     def __init__(
-        self, ledger: Ledger, db: Database, *, timezone: str, commands=None, filing=None
+        self,
+        ledger: Ledger,
+        db: Database,
+        *,
+        timezone: str,
+        commands=None,
+        filing=None,
+        attachments=None,
+        connector=None,
     ) -> None:
         self.ledger = ledger
         self.db = db
         self.zone = ZoneInfo(timezone)
         self.commands = commands  # handles commands and taps; None records only
         self.filing = filing  # files by session or reply, and offers the picker
+        self.attachments = attachments  # queues file fetches, records files that are too large
+        self.connector = connector  # for notices to the chat
 
     async def handle(self, event: SourceEvent) -> None:
         if event.kind == "record.created":
@@ -147,80 +157,145 @@ class Ingestion:
                     )
                 )
 
+    async def _album_head(self, conn: AsyncConnection, event: SourceEvent, n: NormalizedMessage):
+        """The record that an album item joins: the first item of the same album."""
+        if not n.album_id or event.message is None:
+            return None
+        return (
+            await conn.execute(
+                select(record).where(
+                    record.c.chat_id == event.chat.chat_id,
+                    record.c.album_id == n.album_id,
+                    record.c.message_id != event.message.message_id,
+                )
+            )
+        ).first()
+
+    async def _album_item(self, conn: AsyncConnection, event: SourceEvent, n, head, now) -> list:
+        """A later photo of an album: its own chained entry, but the head's record and files."""
+        head_seq = int(head.seq)
+        view = self._normalized_view(event, n, n.text, None)
+        view["album_of"] = head_seq
+        appended = await self.ledger.append(
+            conn,
+            type="record.created",
+            source=self._source(event),
+            source_event=event.event_id,
+            observed_at=event.occurred_at,
+            payload={"raw": event.raw, "normalized": view},
+            refs=[head_seq],
+            received_at=now,
+        )
+        notices: list = []
+        if not appended.duplicate:
+            if n.caption and not head.caption:
+                await conn.execute(
+                    update(record).where(record.c.seq == head_seq).values(caption=n.caption)
+                )
+                await self._index(conn, head_seq, head.text, n.caption, event.blobs, now)
+            if self.attachments is not None:
+                notices = await self.attachments.register(conn, self.ledger, event, head_seq)
+        log.info(
+            "album item recorded",
+            extra=ctx(action="record.created", entry=appended.seq, chat_id=event.chat.chat_id),
+        )
+        return notices
+
+    async def _send_notices(self, notices: list) -> None:
+        if self.connector is None:
+            return
+        for notice in notices:
+            await self.connector.send(
+                notice.chat, OutboundMessage(notice.text, reply_to=notice.reply_to)
+            )
+
     async def _record(self, event: SourceEvent, text: str | None = None) -> None:
         n = event.normalized or NormalizedMessage()
         if text is None:
             text = n.text
         now = datetime.now(UTC)
+        notices: list = []
+        auto = None
+        appended = None
         async with self.db.engine.begin() as conn:
-            reply_seq = None
-            if n.reply_to is not None:
-                reply_seq = await self._record_seq_for(
-                    conn, event.chat.chat_id, n.reply_to.message_id
-                )
-            view = self._normalized_view(event, n, text, reply_seq)
-            appended = await self.ledger.append(
-                conn,
-                type="record.created",
-                source=self._source(event),
-                source_event=event.event_id,
-                observed_at=event.occurred_at,
-                payload={"raw": event.raw, "normalized": view},
-                refs=[reply_seq] if reply_seq else [],
-                received_at=now,
-            )
-            if not appended.duplicate:
-                author = view["author"] or {}
-                forward = view["forward"] or {}
-                stated = stated_time(text, written_at=event.occurred_at, zone=self.zone)
-                await conn.execute(
-                    insert(record).values(
-                        seq=appended.seq,
-                        connector=event.chat.connector,
-                        chat_id=event.chat.chat_id,
-                        message_id=event.message.message_id if event.message else None,
-                        author_id=author.get("id"),
-                        author_name=author.get("name"),
-                        author_username=author.get("username"),
-                        text=text,
-                        caption=n.caption,
-                        origin=view["origin"],
-                        forward_sender_name=forward.get("sender_name"),
-                        forward_sender_id=forward.get("sender_id"),
-                        forward_sent_at=n.forwarded_from.sent_at if n.forwarded_from else None,
-                        reply_to_seq=reply_seq,
-                        album_id=n.album_id,
-                        media_kinds=list(n.media_kinds),
-                        stated_at=stated,
-                        tags=view["tags"],
-                        observed_at=event.occurred_at,
-                        received_at=now,
-                        version=1,
+            head = await self._album_head(conn, event, n)
+            if head is not None:
+                notices = await self._album_item(conn, event, n, head, now)
+            else:
+                reply_seq = None
+                if n.reply_to is not None:
+                    reply_seq = await self._record_seq_for(
+                        conn, event.chat.chat_id, n.reply_to.message_id
                     )
+                view = self._normalized_view(event, n, text, reply_seq)
+                appended = await self.ledger.append(
+                    conn,
+                    type="record.created",
+                    source=self._source(event),
+                    source_event=event.event_id,
+                    observed_at=event.occurred_at,
+                    payload={"raw": event.raw, "normalized": view},
+                    refs=[reply_seq] if reply_seq else [],
+                    received_at=now,
                 )
-                await conn.execute(
-                    insert(record_version).values(
-                        seq=appended.seq,
-                        record_seq=appended.seq,
-                        version=1,
-                        text=text,
-                        caption=n.caption,
-                        observed_at=event.occurred_at,
-                    )
-                )
-                await self._index(conn, appended.seq, text, n.caption, event.blobs, now)
-                auto = None
-                if self.filing is not None:
-                    auto = await self.filing.auto_project(conn, event, reply_seq)
-                    if auto is not None:
-                        await self.filing.file(
-                            conn,
-                            record_seq=appended.seq,
-                            project=auto.project,
-                            event=event,
-                            via=auto.via,
-                            source_event=f"{event.event_id}:filed",
+                if not appended.duplicate:
+                    author = view["author"] or {}
+                    forward = view["forward"] or {}
+                    stated = stated_time(text, written_at=event.occurred_at, zone=self.zone)
+                    await conn.execute(
+                        insert(record).values(
+                            seq=appended.seq,
+                            connector=event.chat.connector,
+                            chat_id=event.chat.chat_id,
+                            message_id=event.message.message_id if event.message else None,
+                            author_id=author.get("id"),
+                            author_name=author.get("name"),
+                            author_username=author.get("username"),
+                            text=text,
+                            caption=n.caption,
+                            origin=view["origin"],
+                            forward_sender_name=forward.get("sender_name"),
+                            forward_sender_id=forward.get("sender_id"),
+                            forward_sent_at=n.forwarded_from.sent_at if n.forwarded_from else None,
+                            reply_to_seq=reply_seq,
+                            album_id=n.album_id,
+                            media_kinds=list(n.media_kinds),
+                            stated_at=stated,
+                            tags=view["tags"],
+                            observed_at=event.occurred_at,
+                            received_at=now,
+                            version=1,
                         )
+                    )
+                    await conn.execute(
+                        insert(record_version).values(
+                            seq=appended.seq,
+                            record_seq=appended.seq,
+                            version=1,
+                            text=text,
+                            caption=n.caption,
+                            observed_at=event.occurred_at,
+                        )
+                    )
+                    await self._index(conn, appended.seq, text, n.caption, event.blobs, now)
+                    if self.attachments is not None:
+                        notices = await self.attachments.register(
+                            conn, self.ledger, event, appended.seq
+                        )
+                    if self.filing is not None:
+                        auto = await self.filing.auto_project(conn, event, reply_seq)
+                        if auto is not None:
+                            await self.filing.file(
+                                conn,
+                                record_seq=appended.seq,
+                                project=auto.project,
+                                event=event,
+                                via=auto.via,
+                                source_event=f"{event.event_id}:filed",
+                            )
+        if appended is None:  # an album item: the head carries the mark and the picker
+            await self._send_notices(notices)
+            return
         log.info(
             "record recorded" if not appended.duplicate else "record delivered again",
             extra=ctx(
@@ -231,6 +306,7 @@ class Ingestion:
             ),
         )
         await event.ack()
+        await self._send_notices(notices)
         if self.filing is not None and not appended.duplicate and auto is None:
             await self.filing.offer_picker(event, appended.seq)
 

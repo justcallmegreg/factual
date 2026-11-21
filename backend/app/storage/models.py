@@ -20,7 +20,7 @@ from sqlalchemy import (
     Table,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 
 metadata = MetaData()
 
@@ -58,7 +58,7 @@ instance = Table(
     CheckConstraint("id = 1", name="instance_single_row"),
 )
 
-EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance")
+EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance", "blob")
 
 # --- projections -----------------------------------------------------------------------
 
@@ -173,4 +173,56 @@ search_chunk = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Index("search_chunk_tsv_idx", "tsv", postgresql_using="gin"),
     Index("search_chunk_record_idx", "record_seq", "kind"),
+)
+
+job = Table(
+    "job",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("kind", Text, nullable=False),
+    Column("payload", JSONB, nullable=False),
+    Column("status", Text, nullable=False, server_default="queued"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("max_attempts", Integer, nullable=False, server_default="5"),
+    Column("run_at", DateTime(timezone=True), nullable=False),
+    Column("locked_at", DateTime(timezone=True)),
+    Column("last_error", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("finished_at", DateTime(timezone=True)),
+    Index("job_due_idx", "status", "run_at"),
+)
+
+blob = Table(
+    "blob",
+    metadata,
+    Column("seq", BigInteger, ForeignKey("ledger_entry.seq"), primary_key=True),
+    Column("sha256_plain", LargeBinary, nullable=False),
+    Column("sha256_stored", LargeBinary, nullable=False),
+    Column("size_bytes", BigInteger, nullable=False),
+    Column("mime", Text, nullable=False),
+    Column("object_key", Text, nullable=False),
+    Column("version_id", Text),
+    Column("wrapped_key", LargeBinary, nullable=False),
+    Column("aad", Text, nullable=False),
+    Column("retain_until", DateTime(timezone=True)),
+)
+
+attachment = Table(
+    "attachment",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("record_seq", BigInteger, ForeignKey("record.seq"), nullable=False),
+    Column("file_unique_id", Text, nullable=False),
+    Column("file_id", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("file_name", Text),
+    Column("mime", Text),
+    Column("size_bytes", BigInteger),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("entry_seq", BigInteger),
+    Column("object_key", Text),
+    Column("version_id", Text),
+    Column("sha256_plain", LargeBinary),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("attachment_record_file_idx", "record_seq", "file_unique_id", unique=True),
 )

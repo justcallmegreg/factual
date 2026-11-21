@@ -28,6 +28,17 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 12
+      s3:
+        image: rustfs/rustfs:1.0.6
+        env:
+          RUSTFS_ACCESS_KEY: factual
+          RUSTFS_SECRET_KEY: factual-dev-secret
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "curl -sf http://localhost:9000/health"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     defaults:
       run:
         working-directory: backend
@@ -43,6 +54,7 @@ jobs:
       - run: make test
         env:
           TEST_DATABASE_URL: postgresql://factual:factual@localhost:5432/factual
+          TEST_S3_ENDPOINT: http://localhost:9000
       - run: make swagger-check
 
   build:
