@@ -93,6 +93,17 @@ class Settings(BaseSettings):
             raise ValueError(f"unknown time zone {value!r}") from exc
         return value
 
+    def secret_values(self) -> list[str]:
+        """Every secret the logs must never show."""
+        candidates = (
+            self.telegram_bot_token,
+            self.anthropic_api_key,
+            self.s3_access_key_id,
+            self.s3_secret_access_key,
+            self.api_token,
+        )
+        return [value for value in candidates if value]
+
     @classmethod
     def load(cls, env_file: str | Path | None = ".env") -> Settings:
         """Read the settings, or raise ConfigurationError naming each bad variable."""

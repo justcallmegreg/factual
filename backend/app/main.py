@@ -7,12 +7,14 @@ its part here.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
 
@@ -29,8 +31,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.settings = settings if settings is not None else Settings.load()
+        app.state.settings = active = settings if settings is not None else Settings.load()
+        configure_logging(active.log_level, app.version, secrets=active.secret_values())
+        logging.getLogger("factual").info("factual backend started")
         yield
+        logging.getLogger("factual").info("factual backend stopped")
 
     app = FastAPI(
         title="Factual",

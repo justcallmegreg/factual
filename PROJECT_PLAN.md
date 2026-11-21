@@ -110,10 +110,10 @@ As an operator, I want JSON logs with a level that I can set, so that I can foll
 
 **Tasks**
 
-- [ ] Configure the standard `logging` module with the ECS formatter on standard output.
-- [ ] Route the Uvicorn loggers through the same handler.
-- [ ] Add a helper for context fields such as the entry number and the action.
-- [ ] Write tests for the levels, the format and the content rule.
+- [x] Configure the standard `logging` module with the ECS formatter on standard output.
+- [x] Route the Uvicorn loggers through the same handler.
+- [x] Add a helper for context fields such as the entry number and the action.
+- [x] Write tests for the levels, the format and the content rule.
 
 ### FAC-04 · Container and Makefile
 
