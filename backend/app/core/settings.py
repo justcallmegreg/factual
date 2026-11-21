@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     telegram_capture_chat_id: int | None = None
     database_url: str
+    runtime_database_url: str | None = None  # a LOGIN role with the runtime grants, if any
     s3_endpoint: str
     s3_bucket: str
     s3_access_key_id: str
@@ -126,6 +127,7 @@ class Settings(BaseSettings):
             self.s3_secret_access_key,
             self.api_token,
             _password_of(self.database_url),
+            _password_of(self.runtime_database_url),
             _password_of(self.qualified_tsa_url),
         ]
         return [value for value in candidates if value and len(value) >= MIN_SECRET_LENGTH]

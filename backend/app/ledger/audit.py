@@ -176,61 +176,107 @@ class DeepAudit:
                 renewed_at[int(anchor.renews)] = anchor.gen_time
         return checked
 
-    async def _check_certificates(
-        self, conn: AsyncConnection, result: AuditResult
-    ) -> list[tuple[str, datetime]]:
-        """Warn about authority certificates that expire within 90 days and return them."""
+    @staticmethod
+    def _chain_expiry(chain_pem: bytes) -> datetime | None:
+        """The earliest notAfter in a certificate chain, or None when it cannot be read."""
         from cryptography import x509
 
-        all_rows = (
+        try:
+            certs = x509.load_pem_x509_certificates(bytes(chain_pem))
+        except ValueError:
+            return None
+        if not certs:
+            return None
+        return min(
+            getattr(c, "not_valid_after_utc", None) or c.not_valid_after.replace(tzinfo=UTC)
+            for c in certs
+        )
+
+    async def _check_certificates(self, conn: AsyncConnection, result: AuditResult) -> list[int]:
+        """Warn per authority about chains that expire within 90 days, and return the ids of
+        the tokens to renew: their own chain expires within the window and nothing renews
+        them yet. An expired chain is only reported: a renewal made now cannot cover it."""
+        rows = (
             await conn.execute(
-                select(seal_anchor.c.issuer, seal_anchor.c.chain_pem)
-                .where(seal_anchor.c.chain_pem.is_not(None))
-                .order_by(seal_anchor.c.id.desc())
+                select(
+                    seal_anchor.c.id,
+                    seal_anchor.c.issuer,
+                    seal_anchor.c.chain_pem,
+                    seal_anchor.c.renews,
+                )
+                .where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                .order_by(seal_anchor.c.id)
             )
         ).all()
-        latest: dict[str, bytes] = {}
-        for issuer, chain_pem in all_rows:
-            latest.setdefault(issuer, chain_pem)  # the newest chain per authority
+        renewed = {int(r.renews) for r in rows if r.renews is not None}
         now = self.clock()
-        expiring: list[tuple[str, datetime]] = []
-        for issuer, chain_pem in latest.items():
-            try:
-                certs = x509.load_pem_x509_certificates(bytes(chain_pem))
-            except ValueError:
-                result.warnings.append(f"{host_of(issuer)}: certificate chain unreadable")
+        window = now + timedelta(days=CERTIFICATE_WARNING_DAYS)
+        expiring: list[int] = []
+        soon: dict[str, tuple[datetime, int]] = {}
+        expired: dict[str, tuple[datetime, int]] = {}
+        unreadable: set[str] = set()
+        for r in rows:
+            if r.chain_pem is None:
                 continue
-            if not certs:
+            after = self._chain_expiry(r.chain_pem)
+            if after is None:
+                unreadable.add(r.issuer)
                 continue
-            after = min(
-                getattr(c, "not_valid_after_utc", None) or c.not_valid_after.replace(tzinfo=UTC)
-                for c in certs
-            )
             if after < now:
-                result.warnings.append(
-                    f"{host_of(issuer)}: TSA certificate expired on {after:%Y-%m-%d}"
-                )
-                expiring.append((issuer, after))
-            elif after < now + timedelta(days=CERTIFICATE_WARNING_DAYS):
-                result.warnings.append(
-                    f"{host_of(issuer)}: TSA certificate expires on {after:%Y-%m-%d}"
-                )
-                expiring.append((issuer, after))
+                first, n = expired.get(r.issuer, (after, 0))
+                expired[r.issuer] = (min(first, after), n + 1)
+            elif after < window:
+                first, n = soon.get(r.issuer, (after, 0))
+                to_renew = int(r.id) not in renewed
+                soon[r.issuer] = (min(first, after), n + (1 if to_renew else 0))
+                if to_renew:
+                    expiring.append(int(r.id))
+        for issuer in sorted(unreadable):
+            result.warnings.append(f"{host_of(issuer)}: certificate chain unreadable")
+        for issuer, (after, n) in sorted(expired.items()):
+            result.warnings.append(
+                f"{host_of(issuer)}: TSA certificate expired on {after:%Y-%m-%d} "
+                f"({n} token(s) rely on a renewal)"
+            )
+        for issuer, (after, n) in sorted(soon.items()):
+            result.warnings.append(
+                f"{host_of(issuer)}: TSA certificate expires on {after:%Y-%m-%d} "
+                f"({n} token(s) to renew)"
+            )
         return expiring
 
-    async def _renew_expiring(
-        self, result: AuditResult, expiring: list[tuple[str, datetime]]
-    ) -> None:
-        """One renewal per token of an expiring authority, from every other authority."""
+    async def _renew_expiring(self, result: AuditResult, expiring: list[int]) -> None:
+        """One renewal per expiring token, from every authority whose own certificate is good
+        beyond the window (an authority never used yet counts as good)."""
         if not expiring or self.anchoring is None:
             return
         async with self.db.engine.begin() as conn:
-            anchors = (
+            rows = (
                 await conn.execute(
-                    select(seal_anchor).where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                    select(seal_anchor)
+                    .where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                    .order_by(seal_anchor.c.id.desc())
                 )
             ).all()
-            renewed = {(int(a.renews), a.issuer) for a in anchors if a.renews is not None}
+            by_id = {int(r.id): r for r in rows}
+            now = self.clock()
+            window = now + timedelta(days=CERTIFICATE_WARNING_DAYS)
+            latest: dict[str, datetime | None] = {}
+            for r in rows:  # newest first: the chain an authority signs with today
+                if r.issuer not in latest and r.chain_pem is not None:
+                    latest[r.issuer] = self._chain_expiry(r.chain_pem)
+            healthy = [
+                url
+                for url in self.anchoring.urls
+                if public_url(url) not in latest
+                or (latest[public_url(url)] is not None and latest[public_url(url)] >= window)
+            ]
+            if not healthy:
+                result.warnings.append(
+                    "no configured authority has a certificate valid beyond the next "
+                    f"{CERTIFICATE_WARNING_DAYS} days: renewals postponed"
+                )
+                return
             pending = (
                 await conn.execute(
                     select(job.c.payload).where(
@@ -243,25 +289,24 @@ class DeepAudit:
                 for p in pending
                 if p.payload.get("renews") is not None
             }
-            now = self.clock()
+            have = {(int(r.renews), r.issuer) for r in rows if r.renews is not None}
             requested = 0
-            for issuer, after in expiring:
-                targets = [u for u in self.anchoring.urls if public_url(u) != issuer]
-                targets = targets or list(self.anchoring.urls)
-                for anchor in anchors:
-                    if anchor.issuer != issuer or anchor.renews is not None:
+            for anchor_id in expiring:
+                anchor = by_id.get(anchor_id)
+                if anchor is None:
+                    continue
+                for url in healthy:
+                    if public_url(url) == anchor.issuer:
+                        continue  # not from the expiring authority itself
+                    if (anchor_id, public_url(url)) in have or (anchor_id, url) in queued:
                         continue
-                    for url in targets:
-                        key = (int(anchor.id), public_url(url))
-                        if key in renewed or (int(anchor.id), url) in queued:
-                            continue
-                        await self.anchoring.renew(conn, anchor, url, now)
-                        requested += 1
-                if requested:
-                    result.warnings.append(
-                        f"{requested} token(s) sent for renewal before {host_of(issuer)}'s "
-                        f"certificate expires on {after:%Y-%m-%d}"
-                    )
+                    await self.anchoring.renew(conn, anchor, url, now)
+                    requested += 1
+        if requested:
+            result.warnings.append(
+                f"{requested} token(s) sent for renewal before their authority's certificate "
+                "expires"
+            )
 
     async def _rehash_attachments(self, result: AuditResult) -> int:
         if self.store is None:

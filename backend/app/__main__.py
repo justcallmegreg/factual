@@ -56,6 +56,7 @@ def audit(argv: Sequence[str]) -> int:
     from app.storage.blobs import S3ObjectStore
     from app.storage.boot import detect_restore, record_boot
     from app.storage.db import Database, run_migrations
+    from app.storage.grants import RUNTIME_ROLE
 
     parser = argparse.ArgumentParser(prog="python -m app audit", description="Run the deep audit.")
     parser.add_argument("--reason", default="manual")
@@ -71,7 +72,10 @@ def audit(argv: Sequence[str]) -> int:
 
     async def run() -> int:
         run_migrations(settings.database_url)
-        db = Database(settings.database_url)
+        db = Database(
+            settings.runtime_database_url or settings.database_url,
+            role=None if settings.runtime_database_url else RUNTIME_ROLE,
+        )
         try:
             key = load_signing_key(settings.signing_key_file)
             ledger = await Ledger.open(db, public_key=public_key_bytes(key))

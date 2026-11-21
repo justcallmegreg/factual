@@ -10,9 +10,10 @@ expired (the Evidence Record Syntax approach, RFC 4998).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
-from urllib.parse import urlparse, urlsplit, urlunsplit
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import insert, select
@@ -23,7 +24,7 @@ from app.connectors.base import ChatRef, Connector, OutboundMessage
 from app.core.clock import Clock, system_clock
 from app.core.logging import ctx
 from app.ledger.seals import Seal, stamped_bytes
-from app.ledger.tsa import TimestampClient
+from app.ledger.tsa import TimestampClient, TsaError, public_url, verify_token_with_openssl
 from app.storage.db import Database
 from app.storage.jobs import Job, enqueue
 from app.storage.models import schedule_run, seal_anchor
@@ -40,17 +41,6 @@ MAX_ATTEMPTS = 10
 
 def host_of(url: str) -> str:
     return urlparse(url).hostname or url
-
-
-def public_url(url: str) -> str:
-    """The address without credentials: what is stored, logged and shown."""
-    parts = urlsplit(url)
-    if "@" not in parts.netloc:
-        return url
-    netloc = parts.hostname or ""
-    if parts.port:
-        netloc += f":{parts.port}"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 class SealAnchoring:
@@ -170,6 +160,11 @@ class SealAnchoring:
         )
         try:
             token = await self.client.request(url, data)
+            verified = await asyncio.to_thread(
+                verify_token_with_openssl, token.response_bytes, data, token.chain_pem
+            )
+            if not verified:  # never store a token the outsider's check would refuse
+                raise TsaError(f"{issuer}: the token does not verify with its certificate chain")
         except Exception as exc:
             if job.attempts == REPORT_AFTER_ATTEMPTS:
                 await self._notify(

@@ -26,6 +26,19 @@ from rfc3161_client import HashAlgorithm, TimestampRequestBuilder, decode_timest
 GRANTED = {0, 1}  # granted, granted with modifications
 
 
+def public_url(url: str) -> str:
+    """The address without credentials: what is stored, logged and shown."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+    netloc = parts.hostname or ""
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 class TsaError(RuntimeError):
     pass
 
@@ -170,6 +183,7 @@ class TimestampClient:
 
     async def request(self, url: str, data: bytes) -> TsaToken:
         request = self.build_request(data)
+        shown = public_url(url)  # credentials, if any, never reach a message or a row
         try:
             response = await self.http.post(
                 url,
@@ -182,10 +196,10 @@ class TimestampClient:
                 follow_redirects=True,
             )
         except httpx.HTTPError as exc:
-            raise TsaError(f"{url}: {type(exc).__name__}") from exc
+            raise TsaError(f"{shown}: {type(exc).__name__}") from exc
         if response.status_code != 200:
-            raise TsaError(f"{url} answered HTTP {response.status_code}")
-        return self.check(response.content, data, nonce=request.nonce, issuer=url)
+            raise TsaError(f"{shown} answered HTTP {response.status_code}")
+        return self.check(response.content, data, nonce=request.nonce, issuer=shown)
 
 
 def verify_token_with_openssl(

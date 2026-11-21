@@ -156,7 +156,7 @@ async def test_respond_as_a_reply_posts_a_brief_and_a_draft(chat):
     assert "Claim" in brief and "We agreed on 12 February weeks ago" in brief
     assert "A1 We agreed on 12 February — Not on record" in brief
     assert "A2 You prepared for the wrong date — Contradicted" in brief
-    assert f"E{s['a']} Verified · seal 1 · /proof E{s['a']}" in brief
+    assert f"E{s['a']} Sealed, timestamp pending · seal 1 · /proof E{s['a']}" in brief
     assert "For claim" in brief and f"E{s['b']}" in brief
     assert "check the source chat" in brief
     assert draft.startswith("DRAFT (edit it, then send it yourself)")
@@ -213,7 +213,7 @@ async def test_claude_gets_the_skill_as_instructions_and_the_two_extra_read_only
     later = json.loads(claude.requests[1]["messages"][-1]["content"][0]["content"])
     assert any(r["seq"] == s["b"] for r in later["later_records"])
     verified = json.loads(claude.requests[2]["messages"][-1]["content"][0]["content"])
-    assert verified["status"] == "Verified" and verified["seal_no"] == 1
+    assert verified["status"] == "Sealed, timestamp pending" and verified["seal_no"] == 1
 
 
 async def test_a_draft_that_fails_the_checker_is_sent_back_once_then_withheld(chat):

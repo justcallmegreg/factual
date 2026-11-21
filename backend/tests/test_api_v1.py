@@ -79,7 +79,7 @@ def test_records_list_filters_and_detail(api, seeded):
     item = next(r for r in body["records"] if r["seq"] == seeded["first"])
     assert item["project"] == "client-acme" and item["author"]["name"] == "Greg S."
     assert item["text"] == "Kickoff on 5 February at the office" and item["origin"] == "note"
-    assert item["status"]["label"] == "Verified" and item["status"]["seal_no"] == 1
+    assert item["status"]["label"] == "Sealed, timestamp pending" and item["status"]["seal_no"] == 1
     filtered = api.get("/api/v1/records", params={"project": "client-acme"}).json()
     assert [r["seq"] for r in filtered["records"]] == [seeded["first"]]
     texted = api.get("/api/v1/records", params={"text": "family"}).json()
@@ -100,7 +100,9 @@ def test_search_gives_the_same_hits_as_ask(api, seeded):
     assert body["words"] == ["kickoff", "office"]
     assert [h["seq"] for h in body["hits"]] == [seeded["first"]]
     assert body["hits"][0]["text"] == "Kickoff on 5 February at the office"
-    assert body["hits"][0]["status"]["label"] == "Verified"
+    assert (
+        body["hits"][0]["status"]["label"] == "Sealed, timestamp pending"
+    )  # sealed, no TSA in this test
     assert api.get("/api/v1/search").status_code == 422
 
 

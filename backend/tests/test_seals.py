@@ -141,7 +141,9 @@ async def test_verify_shows_the_seal_that_covers_a_record(chat):
     pending = await chat.say("later note")
     await chat.say("/verify", reply_to=sealed)
     reply = chat.replies[-1]
-    assert reply.splitlines()[1].endswith("· Verified · seal 1")
+    assert reply.splitlines()[1].endswith(
+        "· Sealed, timestamp pending · seal 1"
+    )  # sealed, no TSA yet
     assert "chain proof to seal 1 ok" in reply and "seal signature ok" in reply
     assert (
         f"Seal 1 · 2026-10-29T13:08:12Z · covers E1–E{sealed_seq + 0}" in reply
@@ -157,7 +159,7 @@ async def test_ask_hits_show_the_seal(chat):
     await chat.sealer.seal_once()
     chat.clock.advance(5)
     await chat.say("/ask kickoff")
-    assert "Verified · seal 1" in chat.replies[-1]
+    assert "Sealed, timestamp pending · seal 1" in chat.replies[-1]
 
 
 async def test_status_shows_the_last_seal_and_the_key_fingerprint(chat):

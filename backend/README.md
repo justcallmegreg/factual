@@ -115,7 +115,8 @@ Factual is configured with environment variables only. `.env.example` lists ever
 | `LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` |
 | `TELEGRAM_BOT_TOKEN` | required | Thoth's token from @BotFather |
 | `TELEGRAM_CAPTURE_CHAT_ID` | unset | The one group that Thoth serves. While it is unset, Thoth records nothing and only reports the ID of its group |
-| `DATABASE_URL` | required | PostgreSQL connection |
+| `DATABASE_URL` | required | PostgreSQL connection of the owner role: migrations and, without the next variable, the service |
+| `RUNTIME_DATABASE_URL` | unset | Connection of a LOGIN role that is a member of `factual_runtime` (`CREATE ROLE factual_app LOGIN PASSWORD '…' IN ROLE factual_runtime`); the running service then cannot switch back to the owner |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | required | Object storage for attachments |
 | `S3_OBJECT_LOCK_DAYS` | `3650` | Retention for attachments; `0` switches Object Lock off |
 | `ANTHROPIC_API_KEY` | required | Key for the Claude API |
@@ -188,7 +189,7 @@ FastAPI generates the OpenAPI description from the code. The running service ser
 | `GET /api/v1/search` | Full-text search, the same hits as `/ask` | Token |
 | `GET /api/v1/records/{seq}/proof` | The evidence pack as a zip | Token |
 
-The `/api/v1` routes are read-only and need `Authorization: Bearer <API_TOKEN>` (401 otherwise). When `API_TOKEN` is not set they answer 404 with "The API is switched off" and are, for all purposes, off. `GET /api/v1/records` takes `project`, `from`, `to` (ISO 8601 instants, on the recorded time), `text` (a substring), `limit` and `offset`, newest first; `GET /api/v1/search?q=` returns the same hits as `/ask`; `GET /api/v1/records/{seq}/proof` streams the evidence pack zip, which is also the way to fetch a pack over Telegram's 50 MB limit. Every record carries its integrity status (`Verified` with the seal number, `Pending seal` or `Failed`).
+The `/api/v1` routes are read-only and need `Authorization: Bearer <API_TOKEN>` (401 otherwise). When `API_TOKEN` is not set they answer 404 with "The API is switched off" and are, for all purposes, off. `GET /api/v1/records` takes `project`, `from`, `to` (ISO 8601 instants, on the recorded time), `text` (a substring), `limit` and `offset`, newest first; `GET /api/v1/search?q=` returns the same hits as `/ask`; `GET /api/v1/records/{seq}/proof` streams the evidence pack zip, which is also the way to fetch a pack over Telegram's 50 MB limit. Every record carries its integrity status: `Verified` with the seal number (sealed and timestamped by at least one named authority), `Sealed, timestamp pending` (sealed by the instance key, no third-party time yet), `Pending seal` or `Failed`.
 
 Example:
 
@@ -227,7 +228,7 @@ Two database roles:
 - **Owner.** The login role in `DATABASE_URL` owns the schema and runs the migrations. On the first run it needs `CREATEROLE` to create the runtime role (or create the role `factual_runtime` beforehand with `CREATE ROLE factual_runtime NOLOGIN` and grant it to the owner).
 - **Runtime.** Every application connection switches to `factual_runtime` when it opens (`options=-c role=factual_runtime`). This role can read and insert everywhere and maintain the projections, but it has no `UPDATE` or `DELETE` privilege on evidence tables.
 
-Evidence tables (`ledger_entry`, `evidence_payload`, later `seal`, `seal_anchor` and `blob`) are insert-only: besides the missing privileges, a statement-level trigger rejects `UPDATE`, `DELETE` and `TRUNCATE` for every role, the owner included. This is defence in depth; the sealed and timestamped chain heads are the real protection.
+Evidence tables (`ledger_entry`, `evidence_payload`, later `seal`, `seal_anchor` and `blob`) are insert-only: besides the missing privileges, a statement-level trigger rejects `UPDATE`, `DELETE` and `TRUNCATE` for every role, the owner included. This is defence in depth; the sealed and timestamped chain heads are the real protection. Note that with `DATABASE_URL` alone the service connects as the owner and switches to the runtime role on each connection: that is hygiene against bugs, not a privilege boundary, because the owner can switch back. For a boundary, give the service its own LOGIN role in `RUNTIME_DATABASE_URL`.
 
 The database tests use `TEST_DATABASE_URL` (default `postgresql://factual:factual@localhost:5432/factual`, the Compose PostgreSQL) as an admin connection: they migrate one template database per test session and clone it for each test that needs a clean database.
 

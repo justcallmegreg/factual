@@ -12,18 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.ledger.hashing import chain_hash, commitment_string, entry_hash, payload_commitment
 from app.storage.models import evidence_payload, ledger_entry
 
+SEALED_PENDING = "Sealed, timestamp pending"  # sealed by the instance key, no third-party time yet
+
 
 @dataclass(frozen=True)
 class Status:
     """Verified (sealed), Pending seal (captured, not yet sealed) or Failed."""
 
-    label: str  # Verified | Pending seal | Failed
+    label: str  # Verified | Sealed, timestamp pending | Pending seal | Failed
     seal_no: int | None = None
     detail: str = ""
 
     def __str__(self) -> str:
-        if self.label == "Verified" and self.seal_no is not None:
-            return f"Verified · seal {self.seal_no}"
+        if self.label in ("Verified", SEALED_PENDING) and self.seal_no is not None:
+            return f"{self.label} · seal {self.seal_no}"
         return self.label
 
 
@@ -43,15 +45,47 @@ class Verification:
     seal: SealInfo | None = None
 
     def checks_line(self) -> str:
-        return " · ".join(f"{name} {'ok' if ok else 'FAILED'}" for name, ok in self.checks)
+        words = {True: "ok", False: "FAILED", None: "not checked"}
+        return " · ".join(f"{name} {words[ok]}" for name, ok in self.checks)
 
 
 class Verifier:
     """The fast check with seal coverage: the chain proof to the seal and its signature."""
 
-    def __init__(self, genesis: bytes, public_key: bytes) -> None:
+    def __init__(self, genesis: bytes, public_key: bytes, store=None) -> None:
         self.genesis = genesis
         self.public_key = public_key
+        self.store = store  # object storage, for the attachment checksum from object metadata
+
+    async def _attachment_checks(self, conn: AsyncConnection, seq: int) -> list:
+        """Size and checksum of each stored attachment, from the store's metadata."""
+        if self.store is None:
+            return []
+        import base64
+        from dataclasses import astuple
+
+        from app.storage.models import attachment, blob
+
+        rows = (
+            await conn.execute(
+                select(attachment.c.file_name, blob)
+                .select_from(attachment.join(blob, blob.c.seq == attachment.c.entry_seq))
+                .where(attachment.c.record_seq == seq, attachment.c.status == "stored")
+                .order_by(attachment.c.id)
+            )
+        ).all()
+        checks = []
+        for row in rows:
+            name = f"attachment {row.file_name or row.object_key} checksum"
+            try:
+                head = await self.store.head(row.object_key, row.version_id)
+            except Exception:  # noqa: BLE001 — the store is unreachable: say so, do not fail
+                checks.append((name, None))
+                continue
+            _size, checksum, _ = astuple(head)  # the size is the ciphertext's, not the file's
+            expected = base64.b64encode(bytes(row.sha256_stored)).decode()
+            checks.append((name, None if checksum is None else checksum == expected))
+        return checks
 
     async def verify(self, conn: AsyncConnection, seq: int) -> Verification:
         from app.ledger.chain import fold_chain
@@ -60,9 +94,16 @@ class Verifier:
         base = await fast_verify(conn, seq, self.genesis)
         if base.status.label == "Failed" or base.entry is None:
             return base
+        files = await self._attachment_checks(conn, seq)
+        if any(ok is False for _, ok in files):
+            return Verification(
+                Status("Failed", detail="attachment checksum mismatch"),
+                [*base.checks, *files],
+                base.entry,
+            )
         sealed = await covering_seal(conn, seq)
         if sealed is None:
-            return base
+            return Verification(base.status, [*base.checks, *files], base.entry)
         rows = (
             await conn.execute(
                 select(ledger_entry.c.seq, ledger_entry.c.entry, ledger_entry.c.entry_hash)
@@ -94,6 +135,7 @@ class Verifier:
             *base.checks,
             (f"chain proof to seal {sealed.no}", proof_ok),
             ("seal signature", signature_ok),
+            *files,
         ]
         from app.ledger.anchors import host_of
         from app.storage.models import seal_anchor
@@ -111,7 +153,8 @@ class Verifier:
         )
         info = SealInfo(sealed.no, sealed.up_to_seq, sealed.fields.get("created_at", ""), anchors)
         if proof_ok and signature_ok:
-            return Verification(Status("Verified", sealed.no), checks, base.entry, info)
+            label = "Verified" if anchors else SEALED_PENDING  # a named TSA makes it Verified
+            return Verification(Status(label, sealed.no), checks, base.entry, info)
         reason = "chain proof mismatch" if not proof_ok else "seal signature invalid"
         return Verification(Status("Failed", detail=reason), checks, base.entry, info)
 

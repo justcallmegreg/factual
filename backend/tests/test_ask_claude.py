@@ -120,7 +120,7 @@ async def test_the_hits_message_is_edited_into_the_verdict_and_the_cited_records
     assert f"E{s['first']} · client-acme · Note by Greg S." in final.text
     assert '"Let\'s do the kickoff on 5 February, 10:00 at your office."' in final.text
     assert f"E{s['second']} · client-acme · Note by Anna K." in final.text
-    assert "Verified · seal 1" in final.text
+    assert "Sealed, timestamp pending · seal 1" in final.text  # no TSA configured here
     assert f"Caveat: E{s['second']} is a note, not a message from Greg." in final.text
     assert final.text.rstrip().endswith(f"/proof E{s['first']} E{s['second']}")
 

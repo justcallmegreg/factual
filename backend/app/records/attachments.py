@@ -202,7 +202,7 @@ class AttachmentFetcher:
         if result.size_bytes > self.max_bytes:
             raise ValueError(f"file is {result.size_bytes} bytes, over the {self.max_bytes} limit")
         mime = sniff_mime(result.head, ref.mime, ref.file_name)
-        object_key = f"blobs/{result.sha256_plain.hex()}"
+        object_key = f"blobs/{result.sha256_stored.hex()}"  # tells the store nothing about the file
         now = self.clock()
         retain_until = now + timedelta(days=self.lock_days) if self.lock_days > 0 else None
         checksum = base64.b64encode(result.sha256_stored).decode()

@@ -70,18 +70,36 @@ class JobWorker:
         clock: Clock | None = None,
         poll_interval: float = 1.0,
         base_delay: float = 30.0,
+        stale_after: float = 600.0,
     ) -> None:
         self.db = db
         self.handlers = handlers
         self.clock = clock or system_clock
         self.poll_interval = poll_interval
         self.base_delay = base_delay
+        self.stale_after = stale_after  # a "running" job older than this was lost to a crash
         self._stopping = False
 
     async def run_once(self) -> bool:
         """Claim and run one due job. False when nothing is due."""
         now = self.clock()
         async with self.db.engine.begin() as conn:
+            stale = (
+                await conn.execute(
+                    update(job_table)
+                    .where(
+                        job_table.c.status == "running",
+                        job_table.c.locked_at < now - timedelta(seconds=self.stale_after),
+                    )
+                    .values(status="queued", run_at=now)
+                    .returning(job_table.c.id)
+                )
+            ).all()
+            for (stale_id,) in stale:
+                log.warning(
+                    "job left running was queued again",
+                    extra=ctx(action="job.reclaimed", job=int(stale_id)),
+                )
             row = (
                 await conn.execute(
                     select(job_table)

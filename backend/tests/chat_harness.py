@@ -99,6 +99,7 @@ class Chat:
         handlers: dict = {}
         if attachments:
             store = InMemoryObjectStore()
+            verifier.store = store
             master_key = os.urandom(32)
             intake = AttachmentIntake(max_bytes=20 * 1024 * 1024, clock=clock)
             handlers[AttachmentFetcher.KIND] = AttachmentFetcher(

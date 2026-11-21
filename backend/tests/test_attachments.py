@@ -48,7 +48,11 @@ async def test_a_file_is_queued_at_ingestion_and_stored_by_the_worker(chat):
     assert payload["record_seq"] == record_seq
     assert payload["sha256_plain"] == hashlib.sha256(FILE_BYTES).hexdigest()
     assert payload["size_bytes"] == len(FILE_BYTES) and payload["mime"] == "application/pdf"
-    assert payload["object_key"] == f"blobs/{hashlib.sha256(FILE_BYTES).hexdigest()}"
+    ((stored_hash,),) = chat.rows("SELECT sha256_stored FROM blob")
+    assert payload["object_key"] == f"blobs/{bytes(stored_hash).hex()}"
+    assert payload["object_key"] != f"blobs/{hashlib.sha256(FILE_BYTES).hexdigest()}", (
+        "the key must not tell the store which document this is"
+    )
     assert payload["version_id"] and payload["sha256_stored"] and payload["retain_until"]
     assert payload["attachment"]["file_name"] == "contract-v2.pdf"
     assert "wrapped_key" not in json.dumps(payload)

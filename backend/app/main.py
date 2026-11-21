@@ -45,6 +45,7 @@ from app.scheduler.scheduler import Scheduler
 from app.storage.blobs import S3ObjectStore
 from app.storage.boot import detect_restore, record_boot
 from app.storage.db import Database, run_migrations
+from app.storage.grants import RUNTIME_ROLE
 from app.storage.jobs import JobWorker
 
 DESCRIPTION = (
@@ -98,7 +99,10 @@ def create_app(
         if start_services:
             log.info("applying migrations")
             await asyncio.to_thread(run_migrations, active.database_url)
-            app.state.db = db = Database(active.database_url)
+            app.state.db = db = Database(
+                active.runtime_database_url or active.database_url,
+                role=None if active.runtime_database_url else RUNTIME_ROLE,
+            )
             signing_key = load_signing_key(active.signing_key_file)
             app.state.ledger = ledger = await Ledger.open(
                 db, public_key=public_key_bytes(signing_key)
@@ -143,6 +147,7 @@ def create_app(
             except Exception as exc:  # noqa: BLE001 — capture must go on; files retry later
                 log.error("object storage not ready: %s", type(exc).__name__)
             app.state.store = store
+            verifier.store = store
             fetcher = AttachmentFetcher(
                 app.state.ledger,
                 db,
