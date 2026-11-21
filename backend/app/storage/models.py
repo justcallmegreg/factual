@@ -114,3 +114,48 @@ record_version = Table(
     Column("observed_at", DateTime(timezone=True), nullable=False),
     Index("record_version_record_idx", "record_seq", "version", unique=True),
 )
+
+filing = Table(
+    "filing",
+    metadata,
+    Column("seq", BigInteger, ForeignKey("ledger_entry.seq"), primary_key=True),
+    Column("record_seq", BigInteger, ForeignKey("record.seq"), nullable=False),
+    Column("project", Text, nullable=False),
+    Column("previous", Text),
+    Column("by_id", BigInteger),
+    Column("by_name", Text),
+    Column("via", Text, nullable=False),
+    Column("filed_at", DateTime(timezone=True), nullable=False),
+    Index("filing_record_idx", "record_seq"),
+    Index("filing_project_idx", "project", "filed_at"),
+)
+
+picker = Table(
+    "picker",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("chat_id", BigInteger, nullable=False),
+    Column("user_id", BigInteger),
+    Column("message_id", BigInteger),
+    Column("record_seqs", ARRAY(BigInteger), nullable=False),
+    Column("page", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("last_record_at", DateTime(timezone=True), nullable=False),
+    Column("filed_project", Text),
+    Index("picker_share_idx", "chat_id", "user_id", "last_record_at"),
+)
+
+log_session = Table(
+    "log_session",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("chat_id", BigInteger, nullable=False),
+    Column("user_id", BigInteger, nullable=False),
+    Column("project", Text),
+    Column("message_id", BigInteger),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("last_activity_at", DateTime(timezone=True), nullable=False),
+    Column("ended_at", DateTime(timezone=True)),
+    Column("filed_count", Integer, nullable=False, server_default="0"),
+    Index("log_session_user_idx", "chat_id", "user_id", "ended_at"),
+)

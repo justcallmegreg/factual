@@ -41,11 +41,14 @@ def _blob_dict(blob: BlobRef) -> dict:
 class Ingestion:
     """The EventSink of the core."""
 
-    def __init__(self, ledger: Ledger, db: Database, *, timezone: str, commands=None) -> None:
+    def __init__(
+        self, ledger: Ledger, db: Database, *, timezone: str, commands=None, filing=None
+    ) -> None:
         self.ledger = ledger
         self.db = db
         self.zone = ZoneInfo(timezone)
         self.commands = commands  # handles commands and taps; None records only
+        self.filing = filing  # files by session or reply, and offers the picker
 
     async def handle(self, event: SourceEvent) -> None:
         if event.kind == "record.created":
@@ -183,6 +186,18 @@ class Ingestion:
                         observed_at=event.occurred_at,
                     )
                 )
+                auto = None
+                if self.filing is not None:
+                    auto = await self.filing.auto_project(conn, event, reply_seq)
+                    if auto is not None:
+                        await self.filing.file(
+                            conn,
+                            record_seq=appended.seq,
+                            project=auto.project,
+                            event=event,
+                            via=auto.via,
+                            source_event=f"{event.event_id}:filed",
+                        )
         log.info(
             "record recorded" if not appended.duplicate else "record delivered again",
             extra=ctx(
@@ -193,6 +208,8 @@ class Ingestion:
             ),
         )
         await event.ack()
+        if self.filing is not None and not appended.duplicate and auto is None:
+            await self.filing.offer_picker(event, appended.seq)
 
     async def _edit(self, event: SourceEvent) -> None:
         n = event.normalized or NormalizedMessage()

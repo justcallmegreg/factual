@@ -136,6 +136,7 @@ class OutboundMessage:
     buttons: tuple[tuple[Button, ...], ...] = ()
     edit_of: MessageRef | None = None  # edit this message instead of sending a new one
     answer_choice: str | None = None  # the query_id of a tap to answer, if any
+    answer_text: str | None = None  # a short notice shown to the person who tapped
 
 
 @dataclass(frozen=True)

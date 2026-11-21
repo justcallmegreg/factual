@@ -23,7 +23,9 @@ class NullConnector:
 
     def __init__(self) -> None:
         self.sent: list[tuple[ChatRef, OutboundMessage]] = []
+        self.message_ids: list[int] = []  # the id each sent (or edited) message got
         self.acknowledged: list[MessageRef] = []
+        self._next_id = 0
         self._stopped = asyncio.Event()
 
     async def start(self, sink: EventSink) -> None:
@@ -38,7 +40,13 @@ class NullConnector:
 
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef:
         self.sent.append((chat, msg))
-        return SentRef(MessageRef(chat, len(self.sent)))
+        if msg.edit_of is not None:
+            message_id = msg.edit_of.message_id
+        else:
+            self._next_id += 1
+            message_id = self._next_id
+        self.message_ids.append(message_id)
+        return SentRef(MessageRef(chat, message_id))
 
     async def acknowledge(self, ref: MessageRef) -> None:
         self.acknowledged.append(ref)

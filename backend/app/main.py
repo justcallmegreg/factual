@@ -24,6 +24,7 @@ from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.keys import load_signing_key, public_key_bytes
 from app.ledger.ledger import Ledger
+from app.records.filing import Filing
 from app.records.ingest import Ingestion
 from app.storage.db import Database, run_migrations
 
@@ -76,9 +77,12 @@ def create_app(
             app.state.ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
             factory = connector_factory or build_telegram_connector
             app.state.connector = connector = factory(active)
-            commands = CommandDispatcher(app.state.ledger, db, connector, timezone=active.timezone)
+            filing = Filing(app.state.ledger, db, connector, timezone=active.timezone)
+            commands = CommandDispatcher(
+                app.state.ledger, db, connector, timezone=active.timezone, filing=filing
+            )
             app.state.sink = sink = Ingestion(
-                app.state.ledger, db, timezone=active.timezone, commands=commands
+                app.state.ledger, db, timezone=active.timezone, commands=commands, filing=filing
             )
             polling = asyncio.create_task(connector.start(sink), name="connector")
             log.info("connector started", extra={"factual.connector": connector.type})

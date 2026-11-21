@@ -287,10 +287,10 @@ As a member, I want to pick the project with one tap, so that filing a record ne
 
 **Tasks**
 
-- [ ] Implement the picker with inline buttons and the `callback_query` handler.
-- [ ] Implement the `/log` session for each person.
-- [ ] Implement the shared picker, the reply rule and `/log pending`.
-- [ ] Test wrong taps, changed projects and expired sessions.
+- [x] Implement the picker with inline buttons and the `callback_query` handler.
+- [x] Implement the `/log` session for each person.
+- [x] Implement the shared picker, the reply rule and `/log pending`.
+- [x] Test wrong taps, changed projects and expired sessions.
 
 ### FAC-14 · Search hits with /ask
 

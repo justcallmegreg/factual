@@ -32,9 +32,13 @@ class CommandDispatcher:
         self._register_builtin()
 
     def _register_builtin(self) -> None:
+        from app.commands import log as log_command
         from app.commands import project
 
         self.handlers["project"] = project.handle
+        self.handlers["log"] = log_command.handle
+        for prefix in ("p", "chg", "more", "s", "sdone"):
+            self.choice_handlers[prefix] = log_command.tap
 
     async def handle(self, event: SourceEvent) -> None:
         if event.kind == "command" and event.command is not None:

@@ -253,7 +253,9 @@ class TelegramConnector:
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef:
         buttons = [[(b.label, b.data) for b in row] for row in msg.buttons] or None
         if msg.answer_choice:
-            await self.api.answer_callback_query(msg.answer_choice)
+            await self.api.answer_callback_query(msg.answer_choice, msg.answer_text)
+        if not msg.text and msg.edit_of is None:
+            return SentRef(MessageRef(chat, 0))  # only the tap was answered
         if msg.edit_of is not None:
             result = await self.api.edit_message_text(
                 chat.chat_id, msg.edit_of.message_id, msg.text, buttons

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.connectors.base import SourceEvent
 from app.ledger.ledger import Appended, Ledger
-from app.storage.models import PROJECT_NAME_PATTERN, project, record
+from app.storage.models import PROJECT_NAME_PATTERN, filing, project, record
 
 NAME_PATTERN = re.compile(PROJECT_NAME_PATTERN)
 NAME_RULE = (
@@ -78,9 +78,8 @@ async def list_projects(conn: AsyncConnection) -> list[ProjectInfo]:
 async def picker_projects(conn: AsyncConnection) -> list[ProjectInfo]:
     """Active projects, most recently used first, then by name."""
     last_used = (
-        select(record.c.project.label("name"), func.max(record.c.received_at).label("used"))
-        .where(record.c.project.is_not(None))
-        .group_by(record.c.project)
+        select(filing.c.project.label("name"), func.max(filing.c.filed_at).label("used"))
+        .group_by(filing.c.project)
         .subquery()
     )
     rows = (
