@@ -40,6 +40,12 @@ The real-group test from the specification (does every mark notify the members, 
 | Do members get a notification for each ✍ mark? | not yet observed |
 | Does a busy chat (20 messages in a minute) hit rate limits, and does the queue recover? | not yet observed |
 
+### Search
+
+`/ask <question>` searches record text, captions and (later) derived text with PostgreSQL full-text search: the `search_chunk` projection holds one row per text or caption with a generated `english` tsvector and a GIN index. The question's words are stemmed and combined with OR, hits are ranked with `ts_rank_cd`, one hit per record; when the question names a project, that project's records come first. The renderer prints only stored text with the entry number, the project, the origin, the time and the integrity status. With no match, Thoth lists the words it searched for (stop words left out).
+
+Measured on 21 November 2026 with 50,000 seeded records (PostgreSQL 17 in Docker on an Apple silicon laptop, questions matching most records): median 247 ms, worst 359 ms per search. The test is `FACTUAL_PERF=1 pytest tests/test_search.py -k fifty_thousand`.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

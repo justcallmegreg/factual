@@ -305,10 +305,10 @@ As a member, I want `/ask` to show the matching records within 2 seconds, so tha
 
 **Tasks**
 
-- [ ] Build the `search_chunk` projection with a `tsvector` column and a GIN index.
-- [ ] Implement the query builder and the ranking.
-- [ ] Implement the renderer that prints only stored text.
-- [ ] Measure the response time with 50,000 seeded records.
+- [x] Build the `search_chunk` projection with a `tsvector` column and a GIN index.
+- [x] Implement the query builder and the ranking.
+- [x] Implement the renderer that prints only stored text.
+- [x] Measure the response time with 50,000 seeded records.
 
 ### FAC-15 · /verify, /status and /help
 

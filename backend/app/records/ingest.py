@@ -13,7 +13,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.connectors.base import BlobRef, NormalizedMessage, SourceEvent
@@ -21,7 +21,7 @@ from app.core.logging import ctx
 from app.ledger.ledger import Ledger, iso_seconds
 from app.records.normalize import hashtags, stated_time
 from app.storage.db import Database
-from app.storage.models import record, record_version
+from app.storage.models import record, record_version, search_chunk
 
 log = logging.getLogger("factual.ingest")
 
@@ -125,6 +125,28 @@ class Ingestion:
             "stated_at": stated.isoformat() if stated else None,
         }
 
+    @staticmethod
+    async def _index(conn: AsyncConnection, record_seq: int, text, caption, blobs, now) -> None:
+        """Replace the record's text and caption chunks in the search index."""
+        await conn.execute(
+            delete(search_chunk).where(
+                search_chunk.c.record_seq == record_seq,
+                search_chunk.c.kind.in_(["text", "caption"]),
+            )
+        )
+        file_name = blobs[0].file_name if blobs else None
+        for kind, content in (("text", text), ("caption", caption)):
+            if content and content.strip():
+                await conn.execute(
+                    insert(search_chunk).values(
+                        record_seq=record_seq,
+                        kind=kind,
+                        source=file_name if kind == "caption" else None,
+                        content=content,
+                        created_at=now,
+                    )
+                )
+
     async def _record(self, event: SourceEvent, text: str | None = None) -> None:
         n = event.normalized or NormalizedMessage()
         if text is None:
@@ -186,6 +208,7 @@ class Ingestion:
                         observed_at=event.occurred_at,
                     )
                 )
+                await self._index(conn, appended.seq, text, n.caption, event.blobs, now)
                 auto = None
                 if self.filing is not None:
                     auto = await self.filing.auto_project(conn, event, reply_seq)
@@ -254,6 +277,9 @@ class Ingestion:
                     refs=[int(row.seq)],
                 )
                 if not appended.duplicate:
+                    await self._index(
+                        conn, int(row.seq), n.text, n.caption, event.blobs, datetime.now(UTC)
+                    )
                     await conn.execute(
                         insert(record_version).values(
                             seq=appended.seq,

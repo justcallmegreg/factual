@@ -10,6 +10,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     Column,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -19,7 +20,7 @@ from sqlalchemy import (
     Table,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 
 metadata = MetaData()
 
@@ -158,4 +159,18 @@ log_session = Table(
     Column("ended_at", DateTime(timezone=True)),
     Column("filed_count", Integer, nullable=False, server_default="0"),
     Index("log_session_user_idx", "chat_id", "user_id", "ended_at"),
+)
+
+search_chunk = Table(
+    "search_chunk",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("record_seq", BigInteger, ForeignKey("record.seq"), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("source", Text),
+    Column("content", Text, nullable=False),
+    Column("tsv", TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("search_chunk_tsv_idx", "tsv", postgresql_using="gin"),
+    Index("search_chunk_record_idx", "record_seq", "kind"),
 )
