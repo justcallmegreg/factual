@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from app.connectors.base import SourceEvent
 from app.core.clock import format_utc
+from app.ledger.audit import last_audit_line
 from app.ledger.keys import key_fingerprint
 from app.storage.models import ledger_entry, record, seal
 
@@ -24,6 +25,7 @@ async def status_lines(dispatcher: CommandDispatcher) -> list[str]:
         ).scalar_one()
         head = (await conn.execute(select(func.max(ledger_entry.c.seq)))).scalar_one() or 0
         last = (await conn.execute(select(seal).order_by(seal.c.no.desc()).limit(1))).first()
+        audit = await last_audit_line(conn)
     lines = [
         f"Polling: {polling}",
         f"Records without a project: {unfiled}",
@@ -35,6 +37,7 @@ async def status_lines(dispatcher: CommandDispatcher) -> list[str]:
         )
     else:
         lines.append("Last seal: none yet")
+    lines.append(f"Last audit: {audit}")
     signing_key = dispatcher.options.get("signing_key")
     if signing_key is not None:
         lines.append(f"Signing key: {key_fingerprint(signing_key)}")

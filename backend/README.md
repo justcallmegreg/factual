@@ -88,6 +88,10 @@ At `DAILY_HELP_TIME` (default 06:00) in `TIMEZONE`, Thoth posts the command list
 
 After `attachment.stored`, a job sends each image (JPEG, PNG, GIF, WebP up to 5 MB) and each PDF (up to 20 MB and 100 pages, counted with pypdf) to Claude with the instruction to transcribe its text verbatim. The result lands in the `derived_text` projection with the model name and the time, and in the search index as a `derived` chunk, so `/ask` finds a photographed letter or a scanned contract; hits and answers show it as `[text read from <file>]`. Derived text is never evidence: the file and its hash in the `attachment.stored` entry stay the record. Files over the limits, unreadable PDFs and other types are recorded as skipped with the reason; a failing extraction is retried like any job and finally marked failed.
 
+### Nightly deep audit
+
+Between 03:00 and 06:00 local time (once per night, recorded in `schedule_run`), and with `python -m app audit` at any time (for example after a restore, before Thoth starts), the deep audit checks the whole chain against every seal, every seal signature and every timestamp token with `openssl ts -verify`, re-hashes every stored attachment from object storage at a limited rate (two objects per second by default, decrypting each to check both hashes), warns when a TSA certificate has expired or expires within 90 days, and asks again for timestamps that a seal still lacks from a configured authority. Each run appends `audit.completed` with the counts and the findings; a failure is posted in the capture chat with the exact entry (`E41233: payload commitment mismatch`), seal (`seal 482: signature invalid`) or object (`blobs/…@version: stored bytes changed`). `/status`, the daily help and `GET /api/v1/status` show the last result.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

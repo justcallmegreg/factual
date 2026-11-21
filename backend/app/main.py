@@ -29,6 +29,7 @@ from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.anchors import ANCHOR_JOB, SealAnchoring
+from app.ledger.audit import DeepAudit, NightlyAudit, last_audit_line
 from app.ledger.keys import load_signing_key, public_key_bytes, public_key_pem
 from app.ledger.ledger import Ledger
 from app.ledger.pack import PackBuilder
@@ -189,15 +190,36 @@ def create_app(
                     ExtractionJob.KIND: extraction,
                 },
             )
-            scheduled = []
-            if active.telegram_capture_chat_id is not None:
+            capture_chat = (
+                ChatRef("telegram", active.telegram_capture_chat_id)
+                if active.telegram_capture_chat_id is not None
+                else None
+            )
+            app.state.audit = audit = DeepAudit(
+                ledger,
+                db,
+                store,
+                master_key,
+                connector,
+                capture_chat,
+                public_key=ledger.public_key,
+                anchoring=anchoring,
+            )
+
+            async def audit_line() -> str:
+                async with db.engine.connect() as conn:
+                    return await last_audit_line(conn)
+
+            scheduled: list = [NightlyAudit(audit, db, timezone=active.timezone)]
+            if capture_chat is not None:
                 scheduled.append(
                     DailyHelp(
                         db,
                         connector,
-                        ChatRef("telegram", active.telegram_capture_chat_id),
+                        capture_chat,
                         timezone=active.timezone,
                         at=active.daily_help_time,
+                        last_audit=audit_line,
                     )
                 )
             app.state.scheduler = scheduler = Scheduler(scheduled)

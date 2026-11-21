@@ -299,3 +299,16 @@ derived_text = Table(
     Index("derived_text_blob_idx", "blob_seq", unique=True),
     Index("derived_text_record_idx", "record_seq"),
 )
+
+audit_run = Table(
+    "audit_run",
+    metadata,
+    Column("seq", BigInteger, ForeignKey("ledger_entry.seq"), primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("reason", Text),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("finished_at", DateTime(timezone=True), nullable=False),
+    Column("ok", Boolean, nullable=False),
+    Column("failures", Integer, nullable=False, server_default="0"),
+    Column("summary", Text, nullable=False),
+)

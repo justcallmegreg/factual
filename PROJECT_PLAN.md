@@ -490,9 +490,9 @@ As an operator, I want a full check every night, so that silent damage is found 
 
 **Tasks**
 
-- [ ] Implement the audit job and its schedule.
-- [ ] Implement the throttled re-hash from object storage.
-- [ ] Test with a changed row, a changed object and a bad token.
+- [x] Implement the audit job and its schedule.
+- [x] Implement the throttled re-hash from object storage.
+- [x] Test with a changed row, a changed object and a bad token.
 
 ### FAC-25 · Claim response skill
 

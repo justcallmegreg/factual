@@ -5,6 +5,8 @@ access and error logs, including the start-up lines, go through the same ECS
 handler as everything else.
 
 `python -m app keys [--dir DIR]` creates the signing key and the master key.
+`python -m app audit` runs the deep audit once and exits with 1 when it fails
+(for example after a restore, before Thoth is started again).
 """
 
 from __future__ import annotations
@@ -43,10 +45,67 @@ def keys(argv: Sequence[str]) -> int:
     return 0
 
 
+def audit(argv: Sequence[str]) -> int:
+    """Run the deep audit once against the configured database and store."""
+    import asyncio
+
+    from app.ledger.audit import DeepAudit
+    from app.ledger.keys import load_signing_key, public_key_bytes
+    from app.ledger.ledger import Ledger
+    from app.storage.blobs import S3ObjectStore
+    from app.storage.db import Database, run_migrations
+
+    parser = argparse.ArgumentParser(prog="python -m app audit", description="Run the deep audit.")
+    parser.add_argument("--reason", default="manual")
+    args = parser.parse_args(argv)
+    version = read_version()
+    configure_logging("INFO", version)
+    try:
+        settings = Settings.load()
+    except ConfigurationError as exc:
+        logging.getLogger("factual").critical(str(exc))
+        return 2
+    configure_logging(settings.log_level, version, secrets=settings.secret_values())
+
+    async def run() -> int:
+        run_migrations(settings.database_url)
+        db = Database(settings.database_url)
+        try:
+            key = load_signing_key(settings.signing_key_file)
+            ledger = await Ledger.open(db, public_key=public_key_bytes(key))
+            store = S3ObjectStore(
+                endpoint=settings.s3_endpoint,
+                bucket=settings.s3_bucket,
+                access_key_id=settings.s3_access_key_id,
+                secret_access_key=settings.s3_secret_access_key,
+                lock_days=settings.s3_object_lock_days,
+            )
+            master_key = settings.master_key_file.read_bytes()
+            result = await DeepAudit(
+                ledger, db, store, master_key, None, None, public_key=ledger.public_key
+            ).run(reason=args.reason)
+        finally:
+            await db.dispose()
+        for failure in result.failures:
+            print(f"FAIL  {failure.line()}")
+        for warning in result.warnings:
+            print(f"WARN  {warning}")
+        print(
+            f"{'PASSED' if result.ok else 'FAILED'}: {result.entries} entries, "
+            f"{result.seals} seals, "
+            f"{result.tokens} tokens, {result.blobs} files (audit entry E{result.entry_seq})"
+        )
+        return 0 if result.ok else 1
+
+    return asyncio.run(run())
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "keys":
         return keys(argv[1:])
+    if argv and argv[0] == "audit":
+        return audit(argv[1:])
     parser = argparse.ArgumentParser(prog="python -m app", description="Run the Factual backend.")
     parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 — the container's own port
     parser.add_argument("--port", type=int, default=8000)

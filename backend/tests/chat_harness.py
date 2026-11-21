@@ -48,6 +48,7 @@ class Chat:
     signing_key: object = None
     sealer: object = None
     extractor: object = None
+    anchoring: object = None
     next_update: int = field(default=600000000)
     next_message: int = field(default=20000)
 
@@ -133,6 +134,7 @@ class Chat:
             )
             sealer.after_seal.append(anchoring.after_seal)
             handlers[ANCHOR_JOB] = anchoring
+            options["_anchoring"] = anchoring
         if handlers:
             worker = JobWorker(db, handlers, clock=clock, poll_interval=0.01)
         from app.ledger.keys import public_key_pem
@@ -155,7 +157,7 @@ class Chat:
             attachments=intake,
             connector=connector,
         )
-        return cls(
+        chat = cls(
             database_url,
             db,
             ledger,
@@ -169,6 +171,8 @@ class Chat:
             signing_key,
             sealer,
         )
+        chat.anchoring = options.pop("_anchoring", None)
+        return chat
 
     async def close(self) -> None:
         await self.db.dispose()
@@ -241,6 +245,25 @@ class Chat:
                 if button.label == label:
                     return button
         raise LookupError(f"no button {label!r} on {msg.text!r}")
+
+    def audit(self, **kw):
+        """A deep audit over this chat's ledger, store and anchors."""
+        from app.connectors.base import ChatRef
+        from app.ledger.audit import DeepAudit
+        from app.ledger.keys import public_key_bytes
+
+        return DeepAudit(
+            self.ledger,
+            self.db,
+            self.store,
+            self.master_key or None,
+            self.connector,
+            ChatRef("telegram", CAPTURE_CHAT_ID),
+            public_key=public_key_bytes(self.signing_key),
+            clock=self.clock,
+            anchoring=self.anchoring,
+            **kw,
+        )
 
     @property
     def public_key_pem(self) -> bytes:

@@ -15,6 +15,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
+from app.ledger.audit import last_audit_info
 from app.ledger.keys import key_fingerprint_of_pem
 from app.ledger.verify import Verifier
 from app.records.projects import list_projects
@@ -243,11 +244,11 @@ async def status(request: Request) -> ApiStatus:
         unfiled = (
             await conn.execute(select(func.count()).where(record.c.project.is_(None)))
         ).scalar_one()
+        audit = await last_audit_info(conn)
     connector = getattr(request.app.state, "connector", None)
     status_line = getattr(connector, "status_line", None)
     pack_builder = getattr(request.app.state, "pack_builder", None)
     fingerprint = key_fingerprint_of_pem(pack_builder.public_key_pem) if pack_builder else ""
-    audit = getattr(request.app.state, "last_audit", None)
     return ApiStatus(
         ledger=LedgerOut(head_seq=int(head), entries=int(count)),
         last_seal=(
