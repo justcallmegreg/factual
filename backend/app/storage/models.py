@@ -312,3 +312,15 @@ audit_run = Table(
     Column("failures", Integer, nullable=False, server_default="0"),
     Column("summary", Text, nullable=False),
 )
+
+boot = Table(
+    "boot",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("at", DateTime(timezone=True), nullable=False),
+    Column("system_identifier", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("restored", Boolean, nullable=False, server_default="false"),
+    Column("audit_seq", BigInteger),
+    Column("version", Text),
+)

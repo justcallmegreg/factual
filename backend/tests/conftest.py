@@ -47,6 +47,7 @@ ALL_ENV_NAMES = [
     "DAILY_HELP_TIME",
     "ACK_REACTION",
     "API_TOKEN",
+    "AUDIT_ON_START",
 ]
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]

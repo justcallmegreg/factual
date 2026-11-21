@@ -524,9 +524,9 @@ As an operator, I want a tested restore, so that a lost server does not mean los
 
 **Tasks**
 
-- [ ] Write the backup and restore runbook.
-- [ ] Add a start-up check that runs the audit after a restore.
-- [ ] Run the drill and note how long it took.
+- [x] Write the backup and restore runbook.
+- [x] Add a start-up check that runs the audit after a restore.
+- [x] Run the drill and note how long it took.
 
 ### FAC-27 · Optional anchors
 

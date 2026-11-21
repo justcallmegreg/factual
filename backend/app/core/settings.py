@@ -56,11 +56,17 @@ class Settings(BaseSettings):
     daily_help_time: str = "06:00"
     ack_reaction: str = "✍"
     api_token: str | None = None
+    audit_on_start: Literal["restore", "always", "never"] = "restore"
 
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_case_level(cls, value: object) -> object:
         return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("audit_on_start", mode="before")
+    @classmethod
+    def _lower_case_mode(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
     @field_validator("tsa_urls", mode="before")
     @classmethod

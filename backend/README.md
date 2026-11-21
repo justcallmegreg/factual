@@ -120,6 +120,7 @@ Factual is configured with environment variables only. `.env.example` lists ever
 | `DAILY_HELP_TIME` | `06:00` | Time of the daily help message |
 | `ACK_REACTION` | `✍` | The mark on recorded messages |
 | `API_TOKEN` | unset | Bearer token for `/api/v1`; unset switches these routes off |
+| `AUDIT_ON_START` | `restore` | Deep audit at start-up: `restore` when the database was restored into another cluster, `always` at every start, `never` switches the check off |
 
 The service refuses to start when a required variable is missing and names the variable.
 
@@ -221,4 +222,55 @@ The database tests use `TEST_DATABASE_URL` (default `postgresql://factual:factua
 
 ## Backup and restore
 
-Written with the backup and restore story (FAC-26): the database backup, the restore steps, and the audit that runs against the stored seals before Thoth starts again.
+A lost server must not mean lost evidence. Three things hold it, and all three are backed up:
+
+| What | Holds | Backup |
+| --- | --- | --- |
+| PostgreSQL database | The ledger, the seals and their timestamp tokens, the records, the attachment rows with both hashes | `pg_dump` after every nightly audit, kept off the server; once, the roles |
+| Object storage bucket | The encrypted attachments | Replication or a nightly sync to a second bucket with Object Lock, in another account or region |
+| Key files | `signing-key.pem` signs the seals; `master.key` wraps every attachment key | Copied once to two offline places. Without `master.key` no attachment can be decrypted; without the signing key no new seal can be made, but every old seal still verifies with the public key in `instance` |
+
+Object Lock protects every stored object against change and early deletion, but not against the loss of the store itself: that is what the second bucket is for. The audit binds the bytes by their hashes, not by the store's version ids, so a bucket synced back from a backup (new version ids) passes the audit: Factual fetches the current version when the stored version id is unknown and checks the hash either way.
+
+### Backup
+
+```sh
+# the database, custom format, compressed; run it after the nightly audit (after 06:00 local)
+pg_dump --format=custom --no-owner --dbname "$DATABASE_URL" > factual-$(date +%F).dump
+# once, and again when roles change: the role factual_runtime is cluster-level, not part of a database dump
+pg_dumpall --roles-only --dbname "$DATABASE_URL" > factual-roles.sql
+# the bucket, to a second bucket with Object Lock (any S3 sync tool; versions are not needed)
+aws s3 sync s3://factual s3://factual-backup --endpoint-url "$S3_ENDPOINT"
+```
+
+Keep at least seven daily dumps plus one per month. A dump restores with the `pg_restore` of the same or a newer PostgreSQL major version.
+
+### Restore, on a fresh machine
+
+1. Install PostgreSQL 17 and an S3-compatible store, or point `DATABASE_URL` and `S3_ENDPOINT` at the replacements.
+2. Create the empty database and the runtime role, then restore the dump:
+   ```sh
+   createdb factual
+   psql --dbname "$DATABASE_URL" -c "CREATE ROLE factual_runtime NOLOGIN" -c "GRANT factual_runtime TO factual"
+   pg_restore --no-owner --exit-on-error --dbname "$DATABASE_URL" factual-2026-11-20.dump
+   ```
+   The dump holds the schema, the data, the insert-only triggers, the grants and `alembic_version`, so the migrations do not run again.
+3. Restore the bucket: `aws s3 sync s3://factual-backup s3://factual`, or set `S3_BUCKET=factual-backup`.
+4. Put `signing-key.pem` and `master.key` where `SIGNING_KEY_FILE` and `MASTER_KEY_FILE` point.
+5. Run the deep audit before Thoth starts: `python -m app audit --reason restore` (in the container: `docker compose run --rm backend python -m app audit --reason restore`). It checks the whole chain against every seal, every signature and token, re-hashes every attachment and prints `PASSED` or the exact entry, seal or object that failed. Only start Thoth after `PASSED`; a failure means the backup is damaged or incomplete: take an older dump.
+6. Start Thoth (`make up`). The start-up check compares the database cluster's identifier with the one recorded at the last start or audit (table `boot`); after the manual audit they match, so Thoth starts at once. Without the manual audit, the start detects the new cluster and runs the deep audit itself before the sealer, the jobs and the connector start; a failing audit stops the start with the finding in the log (`AUDIT_ON_START=never` overrides, `always` audits at every start).
+
+### Restore drill
+
+The test `tests/test_backup_restore.py::test_the_restore_drill_dumps_restores_into_a_fresh_database_and_audits` performs the drill: it fills a database with records, attachments, a seal and two timestamp tokens, dumps it, restores it into a fresh database and runs the deep audit against the stored seals, tokens and objects. It needs a `pg_dump` of the server's major version (`FACTUAL_PG_DUMP` and `FACTUAL_PG_RESTORE` may name another command, for example `docker exec -i factual-postgres-1 pg_dump`, with `FACTUAL_PG_TOOLS_HOST=host.docker.internal` for the host name the tools see) and restores into the test cluster, or into another cluster named by `FACTUAL_RESTORE_TARGET`. Run it twice a year against a fresh PostgreSQL container and note the time.
+
+Drill on 21 November 2026, from the test cluster into a fresh `postgres:17` container on the same machine (`FACTUAL_RESTORE_TARGET` pointing at it), with `pg_dump`/`pg_restore` 17 from Homebrew's `libpq`:
+
+| Step | Time |
+| --- | --- |
+| `pg_dump` (6 entries, 1 seal, 2 tokens, 2 files; 80 KiB) | 0.2 s |
+| `pg_restore` into the fresh cluster | 0.5 s |
+| Deep audit against the restored database | 0.1 s |
+| Whole test including the container start | 5 s |
+
+The times scale with the data: a dump of a year of use (tens of thousands of entries) restores in minutes, and the audit's re-hash of the attachments takes the longest (two objects per second by default).

@@ -26,11 +26,11 @@ from app.commands.menu import COMMANDS
 from app.connectors.base import ChatRef, Connector
 from app.connectors.telegram.api import AiogramTelegramApi
 from app.connectors.telegram.connector import TelegramConnector, TelegramSettings
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, ctx
 from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.anchors import ANCHOR_JOB, SealAnchoring
-from app.ledger.audit import DeepAudit, NightlyAudit, last_audit_line
+from app.ledger.audit import DeepAudit, NightlyAudit, last_audit_line, summary_line
 from app.ledger.keys import load_signing_key, public_key_bytes, public_key_pem
 from app.ledger.ledger import Ledger
 from app.ledger.pack import PackBuilder
@@ -43,6 +43,7 @@ from app.records.ingest import Ingestion
 from app.scheduler.daily_help import DailyHelp
 from app.scheduler.scheduler import Scheduler
 from app.storage.blobs import S3ObjectStore
+from app.storage.boot import detect_restore, record_boot
 from app.storage.db import Database, run_migrations
 from app.storage.jobs import JobWorker
 
@@ -125,7 +126,6 @@ def create_app(
             app.state.sealer = sealer = Sealer(
                 app.state.ledger, db, signing_key, interval=active.seal_interval_seconds
             )
-            seal_task = asyncio.create_task(sealer.start(), name="sealer")
             master_key = active.master_key_file.read_bytes()
             if len(master_key) != 32:
                 raise RuntimeError(
@@ -206,6 +206,36 @@ def create_app(
                 public_key=ledger.public_key,
                 anchoring=anchoring,
             )
+            # A restored database (another cluster than the last start saw) is audited in
+            # full before the sealer, the jobs and the connector start.
+            async with db.engine.connect() as conn:
+                app.state.boot = boot = await detect_restore(conn)
+            audit_seq = None
+            if active.audit_on_start == "always" or (
+                active.audit_on_start == "restore" and boot.restored
+            ):
+                reason = "restore" if boot.restored else "start"
+                log.warning(
+                    "running the deep audit before start (%s)",
+                    reason,
+                    extra=ctx(action="audit.start"),
+                )
+                result = await audit.run(reason=reason)
+                audit_seq = result.entry_seq
+                if not result.ok:
+                    raise RuntimeError(
+                        f"Deep audit failed after a restore: {summary_line(result)}. Thoth does "
+                        "not start; fix the finding, or set AUDIT_ON_START=never to start anyway."
+                    )
+            elif boot.restored:
+                log.warning(
+                    "database restored into another cluster; audit skipped (AUDIT_ON_START=never)",
+                    extra=ctx(action="audit.skipped"),
+                )
+            async with db.engine.begin() as conn:
+                await record_boot(
+                    conn, boot, kind="start", version=app.version, audit_seq=audit_seq
+                )
 
             async def audit_line() -> str:
                 async with db.engine.connect() as conn:
@@ -224,7 +254,6 @@ def create_app(
                     )
                 )
             app.state.scheduler = scheduler = Scheduler(scheduled)
-            schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
             commands.options["respond_engine"] = RespondEngine(
                 app.state.ledger,
                 db,
@@ -250,6 +279,8 @@ def create_app(
                 master_key=master_key,
                 timezone=active.timezone,
             )
+            seal_task = asyncio.create_task(sealer.start(), name="sealer")
+            schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
             job_task = asyncio.create_task(jobs.start(), name="jobs")
             polling = asyncio.create_task(connector.start(sink), name="connector")
             log.info("connector started", extra={"factual.connector": connector.type})

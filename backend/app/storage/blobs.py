@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import mimetypes
 import os
 import uuid
@@ -25,6 +26,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 NONCE_BYTES = 12
 TAG_BYTES = 16
 HEAD_BYTES = 64
+
+log = logging.getLogger("factual.blobs")
 
 
 @dataclass
@@ -324,11 +327,30 @@ class S3ObjectStore:
         return await asyncio.to_thread(_head)
 
     async def get(self, key, version_id) -> bytes:
+        """The stored version; the current version when a bucket restored from a backup
+        gave the object a new version id (the caller checks the hash either way)."""
+        from botocore.exceptions import ClientError
+
         def _get() -> bytes:
             params = {"Bucket": self.bucket, "Key": key}
             if version_id:
                 params["VersionId"] = version_id
-            return self.client.get_object(**params)["Body"].read()
+            try:
+                return self.client.get_object(**params)["Body"].read()
+            except ClientError as exc:
+                code = exc.response["Error"]["Code"]
+                if not version_id or code not in (
+                    "NoSuchVersion",
+                    "InvalidArgument",
+                    "404",
+                    "NotFound",
+                ):
+                    raise
+                log.warning(
+                    "object version unknown, serving the current version (restored bucket?)",
+                    extra={"factual.object": key},
+                )
+                return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
 
         return await asyncio.to_thread(_get)
 

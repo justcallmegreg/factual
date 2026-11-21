@@ -5,8 +5,9 @@ access and error logs, including the start-up lines, go through the same ECS
 handler as everything else.
 
 `python -m app keys [--dir DIR]` creates the signing key and the master key.
-`python -m app audit` runs the deep audit once and exits with 1 when it fails
-(for example after a restore, before Thoth is started again).
+`python -m app audit [--reason restore]` runs the deep audit once and exits with 1
+when it fails (after a restore, before Thoth is started again); it records the
+database cluster, so the start that follows does not audit a second time.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ def audit(argv: Sequence[str]) -> int:
     from app.ledger.keys import load_signing_key, public_key_bytes
     from app.ledger.ledger import Ledger
     from app.storage.blobs import S3ObjectStore
+    from app.storage.boot import detect_restore, record_boot
     from app.storage.db import Database, run_migrations
 
     parser = argparse.ArgumentParser(prog="python -m app audit", description="Run the deep audit.")
@@ -84,6 +86,12 @@ def audit(argv: Sequence[str]) -> int:
             result = await DeepAudit(
                 ledger, db, store, master_key, None, None, public_key=ledger.public_key
             ).run(reason=args.reason)
+            # the start-up check then knows this cluster and does not audit a second time
+            async with db.engine.begin() as conn:
+                state = await detect_restore(conn)
+                await record_boot(
+                    conn, state, kind="audit", version=version, audit_seq=result.entry_seq
+                )
         finally:
             await db.dispose()
         for failure in result.failures:
