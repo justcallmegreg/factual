@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from app.ai.ask import AskEngine
 from app.ai.client import AnthropicClaude
 from app.api.health import router as health_router
+from app.api.v1 import router as v1_router
 from app.commands.dispatcher import CommandDispatcher
 from app.commands.menu import COMMANDS
 from app.connectors.base import ChatRef, Connector
@@ -95,13 +96,20 @@ def create_app(
             await asyncio.to_thread(run_migrations, active.database_url)
             app.state.db = db = Database(active.database_url)
             signing_key = load_signing_key(active.signing_key_file)
-            app.state.ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
+            app.state.ledger = ledger = await Ledger.open(
+                db, public_key=public_key_bytes(signing_key)
+            )
+            if ledger.public_key != public_key_bytes(signing_key):
+                raise RuntimeError(
+                    "SIGNING_KEY_FILE is not the key this instance was created with; seals signed "
+                    "with it would not verify. Restore the original key file."
+                )
             factory = connector_factory or build_telegram_connector
             app.state.connector = connector = factory(active)
             if hasattr(connector, "commands_menu"):
                 connector.commands_menu = list(COMMANDS)
             filing = Filing(app.state.ledger, db, connector, timezone=active.timezone)
-            verifier = Verifier(app.state.ledger.genesis, public_key_bytes(signing_key))
+            app.state.verifier = verifier = Verifier(ledger.genesis, ledger.public_key)
             commands = CommandDispatcher(
                 app.state.ledger,
                 db,
@@ -247,6 +255,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.include_router(health_router)
+    app.include_router(v1_router)
     return app
 
 

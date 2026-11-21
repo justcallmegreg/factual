@@ -164,7 +164,16 @@ FastAPI generates the OpenAPI description from the code. The running service ser
 | `GET /api/v1/search` | Full-text search, the same hits as `/ask` | Token |
 | `GET /api/v1/records/{seq}/proof` | The evidence pack as a zip | Token |
 
-The `/api/v1` routes are read-only and need `Authorization: Bearer <API_TOKEN>`. When `API_TOKEN` is not set, they are switched off.
+The `/api/v1` routes are read-only and need `Authorization: Bearer <API_TOKEN>` (401 otherwise). When `API_TOKEN` is not set they answer 404 with "The API is switched off" and are, for all purposes, off. `GET /api/v1/records` takes `project`, `from`, `to` (ISO 8601 instants, on the recorded time), `text` (a substring), `limit` and `offset`, newest first; `GET /api/v1/search?q=` returns the same hits as `/ask`; `GET /api/v1/records/{seq}/proof` streams the evidence pack zip, which is also the way to fetch a pack over Telegram's 50 MB limit. Every record carries its integrity status (`Verified` with the seal number, `Pending seal` or `Failed`).
+
+Example:
+
+```sh
+curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8000/api/v1/search?q=kickoff
+curl -H "Authorization: Bearer $API_TOKEN" -o proof.zip http://localhost:8000/api/v1/records/41233/proof
+```
+
+The signing key is bound to the instance: the service refuses to start when `SIGNING_KEY_FILE` is not the key the instance was created with, because seals signed with another key would not verify.
 
 ## Logging
 

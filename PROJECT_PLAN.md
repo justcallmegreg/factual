@@ -451,9 +451,9 @@ As a developer of the future frontend, I want a documented read-only API, so tha
 
 **Tasks**
 
-- [ ] Implement the routes on the projections and the pack builder.
-- [ ] Add the token check and tests for the 401 and 404 cases.
-- [ ] Regenerate `swagger.json` and update `backend/README.md`.
+- [x] Implement the routes on the projections and the pack builder.
+- [x] Add the token check and tests for the 401 and 404 cases.
+- [x] Regenerate `swagger.json` and update `backend/README.md`.
 
 **Gate 2 · Outsider check.** Someone who does not know the system verifies an evidence pack offline.
 

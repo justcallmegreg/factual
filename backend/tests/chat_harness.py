@@ -59,6 +59,7 @@ class Chat:
         attachments: bool = False,
         seals: bool = False,
         tsa_urls: list[str] | None = None,
+        signing_key=None,
         **options,
     ) -> Chat:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -73,7 +74,7 @@ class Chat:
 
         clock = FakeClock(datetime(2026, 10, 29, 13, 3, 12, tzinfo=UTC))
         db = Database(database_url)
-        signing_key = Ed25519PrivateKey.generate()
+        signing_key = signing_key or Ed25519PrivateKey.generate()
         ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
         connector = NullConnector()
         verifier = Verifier(ledger.genesis, public_key_bytes(signing_key))
