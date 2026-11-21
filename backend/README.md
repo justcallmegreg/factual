@@ -68,6 +68,16 @@ Pick authorities whose tokens include their full certificate chain, so that the 
 
 The tests run a local authority built on `openssl ts` (`tests/tsa_server.py`); one test also stamps against the two public defaults when the network allows.
 
+### Optional anchors
+
+Two stronger anchors are off by default.
+
+**Qualified timestamp.** With `QUALIFIED_TSA_URL` set, the first seal of each local day also gets a token from that authority (kind `qualified_tsa`). Under eIDAS Article 41(2) a qualified electronic time stamp is presumed accurate in date and time and in the integrity of the bound data; because the chain links every entry, one stamp a day covers everything before it. Qualified authorities sell per stamp and usually need credentials: put them in the address (`https://account:secret@tsa.example/tsr`). They are sent as HTTP basic authentication and never stored: the ledger, the jobs and the logs hold the address without them. The choice of the day's seal is recorded in `schedule_run` (job `qualified_tsa`), so a restart does not stamp twice. Packs carry the qualified token like any other, and `verify.py` names it "qualified timestamp".
+
+**Renewal before a certificate expires.** The deep audit reads the certificate chain stored with every token. When an authority's chain expires within 90 days (or has expired), the audit warns and requests, for every token of that authority that has no renewal yet, a new token over the old token from each other configured authority (the Evidence Record Syntax approach, RFC 4998). A renewal is stored with `renews` pointing at the token it covers. Once a token's own certificate has expired, the audit checks it at the time of its verified renewal (`openssl ts -verify -attime`), so the old time stays provable; `verify.py` in the pack does the same.
+
+**OpenTimestamps (Bitcoin anchor): tried, not built.** On 21 November 2026 a test digest was submitted to three public calendars (alice and bob at opentimestamps.org, finney at eternitywall.com); each answered within about a second with a pending attestation of 170 to 191 bytes. Completing the proof needs a second request hours later, after the calendar's Bitcoin transaction has confirmed, and checking a completed proof needs Bitcoin block headers (a node or a trusted block explorer), which the pack's offline `verify.py` cannot do with the standard library and OpenSSL. The two independent TSAs and the optional qualified stamp already give offline-checkable third-party time, so the Bitcoin anchor is not built in this version. The schema keeps the kinds `ots_pending` and `ots_complete` for a later story: a daily submission job, an upgrade step in the nightly audit, and the `.ots` file in the pack for the `ots` client.
+
 ### Evidence packs
 
 `/proof`, as a reply to a record or with entry numbers (`/proof E41233 E41502`), posts a zip that anyone can verify offline, without access to Factual. It holds the requested entries as canonical JSON, their payloads with the salt, the entries that belong to them (edits, filings, attachments, album items), a chain proof from each entry to the first seal that covers it, those seals with their signatures and the stamped bytes, the RFC 3161 tokens with the authorities' certificate chains, the instance's public key, the decrypted attachments, a `manifest.json`, a plain-language `README.txt` and `verify.py`. Every other entry of the ledger appears only as a hash inside the chain proofs. A record that is not yet sealed gets a proof to the current chain head and the README says so.
@@ -114,7 +124,7 @@ Factual is configured with environment variables only. `.env.example` lists ever
 | `SIGNING_KEY_FILE` | required | Ed25519 key that signs the seals |
 | `MASTER_KEY_FILE` | required | Key that wraps the attachment keys |
 | `TSA_URLS` | required | Two RFC 3161 TSA addresses, separated by a comma |
-| `QUALIFIED_TSA_URL` | unset | Optional qualified TSA, used once a day |
+| `QUALIFIED_TSA_URL` | unset | Optional qualified TSA, used for the first seal of each day; credentials go in the address and are never stored |
 | `SEAL_INTERVAL_SECONDS` | `300` | Time between seals |
 | `TIMEZONE` | `Europe/Amsterdam` | Time zone for shown times and for the daily help |
 | `DAILY_HELP_TIME` | `06:00` | Time of the daily help message |

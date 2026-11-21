@@ -252,6 +252,7 @@ seal_anchor = Table(
     Column("gen_time", DateTime(timezone=True)),
     Column("policy", Text),
     Column("added_at", DateTime(timezone=True), nullable=False),
+    Column("renews", BigInteger, ForeignKey("seal_anchor.id")),
     Index("seal_anchor_seal_idx", "seal_no", "kind"),
 )
 

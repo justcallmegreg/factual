@@ -61,6 +61,7 @@ class Chat:
         attachments: bool = False,
         seals: bool = False,
         tsa_urls: list[str] | None = None,
+        qualified_tsa_url: str | None = None,
         signing_key=None,
         extractor=None,
         **options,
@@ -131,6 +132,8 @@ class Chat:
                 urls=tsa_urls,
                 capture_chat=ChatRef("telegram", CAPTURE_CHAT_ID),
                 clock=clock,
+                qualified_url=qualified_tsa_url,
+                timezone=timezone,
             )
             sealer.after_seal.append(anchoring.after_seal)
             handlers[ANCHOR_JOB] = anchoring

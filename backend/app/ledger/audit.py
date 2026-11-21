@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.connectors.base import ChatRef, Connector, OutboundMessage
 from app.core.clock import Clock, format_utc, system_clock
 from app.core.logging import ctx
-from app.ledger.anchors import ANCHOR_JOB, MAX_ATTEMPTS, SealAnchoring, host_of
+from app.ledger.anchors import ANCHOR_JOB, MAX_ATTEMPTS, SealAnchoring, host_of, public_url
 from app.ledger.ledger import Ledger, iso_seconds
 from app.ledger.seals import load_seals, stamped_bytes, verify_seals
 from app.ledger.tsa import verify_token_with_openssl
@@ -75,6 +75,7 @@ class DeepAudit:
         clock: Clock | None = None,
         rehash_per_second: float = 2.0,
         anchoring: SealAnchoring | None = None,
+        token_verifier=verify_token_with_openssl,
     ) -> None:
         self.ledger = ledger
         self.db = db
@@ -86,6 +87,7 @@ class DeepAudit:
         self.clock = clock or system_clock
         self.rehash_per_second = rehash_per_second
         self.anchoring = anchoring
+        self.token_verifier = token_verifier
 
     async def run(self, reason: str = "nightly") -> AuditResult:
         result = AuditResult(ok=True, started_at=self.clock())
@@ -103,10 +105,11 @@ class DeepAudit:
                     AuditFailure("seal", f"seal {seals.failure.seal_no}", seals.failure.reason)
                 )
             result.tokens = await self._check_tokens(conn, result)
-            await self._check_certificates(conn, result)
+            expiring = await self._check_certificates(conn, result)
         result.blobs = await self._rehash_attachments(result)
         if self.anchoring is not None:
             await self._request_missing_tokens(result)
+            await self._renew_expiring(result, expiring)
         result.ok = not result.failures
         result.finished_at = self.clock()
         await self._record(result, reason)
@@ -124,36 +127,59 @@ class DeepAudit:
         return result
 
     async def _check_tokens(self, conn: AsyncConnection, result: AuditResult) -> int:
+        """Every token verifies with openssl. A renewal (a token over an older token) is
+        checked first; the token it renews is then checked at the renewal's time, so a
+        token whose authority's certificate has since expired still counts."""
         seals = {s.no: s for s in await load_seals(conn)}
         anchors = (
             await conn.execute(
-                select(seal_anchor).where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                select(seal_anchor)
+                .where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                .order_by(seal_anchor.c.id.desc())
             )
         ).all()
+        by_id = {int(anchor.id): anchor for anchor in anchors}
+        renewed_at: dict[int, datetime] = {}  # anchor id → time of its verified renewal
         checked = 0
         for anchor in anchors:
             sealed = seals.get(int(anchor.seal_no))
+            ref = f"seal {anchor.seal_no} · {anchor.issuer}"
+            if anchor.renews is not None:
+                ref += f" (renews #{anchor.renews})"
             if sealed is None:
-                result.failures.append(
-                    AuditFailure(
-                        "token", f"seal {anchor.seal_no} · {anchor.issuer}", "seal missing"
-                    )
-                )
+                result.failures.append(AuditFailure("token", ref, "seal missing"))
                 continue
+            if anchor.renews is not None:
+                old = by_id.get(int(anchor.renews))
+                if old is None:
+                    result.failures.append(AuditFailure("token", ref, "renewed token missing"))
+                    continue
+                data = bytes(old.proof)
+            else:
+                data = stamped_bytes(sealed.body, sealed.signature)
             checked += 1
-            data = stamped_bytes(sealed.body, sealed.signature)
+            at = renewed_at.get(int(anchor.id))
             ok = await asyncio.to_thread(
-                verify_token_with_openssl, bytes(anchor.proof), data, bytes(anchor.chain_pem or b"")
+                self.token_verifier,
+                bytes(anchor.proof),
+                data,
+                bytes(anchor.chain_pem or b""),
+                at=at,
             )
             if not ok:
-                result.failures.append(
-                    AuditFailure(
-                        "token", f"seal {anchor.seal_no} · {anchor.issuer}", "token does not verify"
-                    )
-                )
+                reason = "token does not verify"
+                if at is not None:
+                    reason += f" (checked at its renewal time {at:%Y-%m-%d})"
+                result.failures.append(AuditFailure("token", ref, reason))
+                continue
+            if anchor.renews is not None and anchor.gen_time is not None:
+                renewed_at[int(anchor.renews)] = anchor.gen_time
         return checked
 
-    async def _check_certificates(self, conn: AsyncConnection, result: AuditResult) -> None:
+    async def _check_certificates(
+        self, conn: AsyncConnection, result: AuditResult
+    ) -> list[tuple[str, datetime]]:
+        """Warn about authority certificates that expire within 90 days and return them."""
         from cryptography import x509
 
         all_rows = (
@@ -167,6 +193,7 @@ class DeepAudit:
         for issuer, chain_pem in all_rows:
             latest.setdefault(issuer, chain_pem)  # the newest chain per authority
         now = self.clock()
+        expiring: list[tuple[str, datetime]] = []
         for issuer, chain_pem in latest.items():
             try:
                 certs = x509.load_pem_x509_certificates(bytes(chain_pem))
@@ -175,17 +202,66 @@ class DeepAudit:
                 continue
             if not certs:
                 continue
-            after = getattr(certs[0], "not_valid_after_utc", None) or certs[
-                0
-            ].not_valid_after.replace(tzinfo=UTC)
+            after = min(
+                getattr(c, "not_valid_after_utc", None) or c.not_valid_after.replace(tzinfo=UTC)
+                for c in certs
+            )
             if after < now:
                 result.warnings.append(
                     f"{host_of(issuer)}: TSA certificate expired on {after:%Y-%m-%d}"
                 )
+                expiring.append((issuer, after))
             elif after < now + timedelta(days=CERTIFICATE_WARNING_DAYS):
                 result.warnings.append(
                     f"{host_of(issuer)}: TSA certificate expires on {after:%Y-%m-%d}"
                 )
+                expiring.append((issuer, after))
+        return expiring
+
+    async def _renew_expiring(
+        self, result: AuditResult, expiring: list[tuple[str, datetime]]
+    ) -> None:
+        """One renewal per token of an expiring authority, from every other authority."""
+        if not expiring or self.anchoring is None:
+            return
+        async with self.db.engine.begin() as conn:
+            anchors = (
+                await conn.execute(
+                    select(seal_anchor).where(seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]))
+                )
+            ).all()
+            renewed = {(int(a.renews), a.issuer) for a in anchors if a.renews is not None}
+            pending = (
+                await conn.execute(
+                    select(job.c.payload).where(
+                        job.c.kind == ANCHOR_JOB, job.c.status.in_(["queued", "running"])
+                    )
+                )
+            ).all()
+            queued = {
+                (int(p.payload["renews"]), p.payload.get("url"))
+                for p in pending
+                if p.payload.get("renews") is not None
+            }
+            now = self.clock()
+            requested = 0
+            for issuer, after in expiring:
+                targets = [u for u in self.anchoring.urls if public_url(u) != issuer]
+                targets = targets or list(self.anchoring.urls)
+                for anchor in anchors:
+                    if anchor.issuer != issuer or anchor.renews is not None:
+                        continue
+                    for url in targets:
+                        key = (int(anchor.id), public_url(url))
+                        if key in renewed or (int(anchor.id), url) in queued:
+                            continue
+                        await self.anchoring.renew(conn, anchor, url, now)
+                        requested += 1
+                if requested:
+                    result.warnings.append(
+                        f"{requested} token(s) sent for renewal before {host_of(issuer)}'s "
+                        f"certificate expires on {after:%Y-%m-%d}"
+                    )
 
     async def _rehash_attachments(self, result: AuditResult) -> int:
         if self.store is None:
@@ -230,7 +306,7 @@ class DeepAudit:
                 for r in (
                     await conn.execute(
                         select(seal_anchor.c.seal_no, seal_anchor.c.issuer).where(
-                            seal_anchor.c.kind == "tsa"
+                            seal_anchor.c.kind == "tsa", seal_anchor.c.renews.is_(None)
                         )
                     )
                 ).all()
@@ -242,7 +318,11 @@ class DeepAudit:
                     )
                 )
             ).all()
-            queued = {(int(p.payload["seal_no"]), p.payload["url"]) for p in pending}
+            queued = {
+                (int(p.payload["seal_no"]), p.payload.get("url"))
+                for p in pending
+                if p.payload.get("renews") is None
+            }
             now = self.clock()
             requested = 0
             for sealed in seals:

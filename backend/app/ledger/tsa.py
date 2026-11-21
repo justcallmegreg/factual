@@ -188,25 +188,31 @@ class TimestampClient:
         return self.check(response.content, data, nonce=request.nonce, issuer=url)
 
 
-def verify_token_with_openssl(response_bytes: bytes, data: bytes, chain_pem: bytes) -> bool:
-    """`openssl ts -verify -in token -data stamped -CAfile chain`: the outsider's check."""
+def verify_token_with_openssl(
+    response_bytes: bytes, data: bytes, chain_pem: bytes, *, at: datetime | None = None
+) -> bool:
+    """`openssl ts -verify -in token -data stamped -CAfile chain`: the outsider's check.
+
+    `at` checks the certificates at that time instead of now: a token whose authority's
+    certificate has expired is still good at the time a renewal proved it existed.
+    """
     with tempfile.TemporaryDirectory() as d:
         work = Path(d)
         (work / "token.tsr").write_bytes(response_bytes)
         (work / "stamped.bin").write_bytes(data)
         (work / "chain.pem").write_bytes(chain_pem)
-        result = _run(
-            [
-                "openssl",
-                "ts",
-                "-verify",
-                "-in",
-                "token.tsr",
-                "-data",
-                "stamped.bin",
-                "-CAfile",
-                "chain.pem",
-            ],
-            work,
-        )
+        args = [
+            "openssl",
+            "ts",
+            "-verify",
+            "-in",
+            "token.tsr",
+            "-data",
+            "stamped.bin",
+            "-CAfile",
+            "chain.pem",
+        ]
+        if at is not None:
+            args += ["-attime", str(int(at.timestamp()))]
+        result = _run(args, work)
     return result.returncode == 0 and b"Verification: OK" in result.stdout + result.stderr

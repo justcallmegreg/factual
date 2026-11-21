@@ -192,7 +192,10 @@ class PackBuilder:
                     anchors = (
                         await conn.execute(
                             select(seal_anchor)
-                            .where(seal_anchor.c.seal_no == sealed.no, seal_anchor.c.kind == "tsa")
+                            .where(
+                                seal_anchor.c.seal_no == sealed.no,
+                                seal_anchor.c.kind.in_(["tsa", "qualified_tsa"]),
+                            )
                             .order_by(seal_anchor.c.id)
                         )
                     ).all()
@@ -208,6 +211,7 @@ class PackBuilder:
                         "stamped": f"seals/{sealed.no}.stamped",
                         "anchors": [],
                     }
+                    token_names: dict[int, str] = {}
                     for n, anchor in enumerate(anchors, start=1):
                         manifest["authorities"].append(
                             describe_authority(
@@ -219,6 +223,7 @@ class PackBuilder:
                             )
                         )
                         token_name = f"seals/{sealed.no}-{n}.tsr"
+                        token_names[int(anchor.id)] = token_name
                         chain_name = (
                             f"tsa/chain-{n}.pem"
                             if len(seals_used) == 0
@@ -239,6 +244,10 @@ class PackBuilder:
                                 ),
                             }
                         )
+                        if anchor.kind != "tsa":
+                            seal_item["anchors"][-1]["kind"] = anchor.kind
+                        if anchor.renews is not None and int(anchor.renews) in token_names:
+                            seal_item["anchors"][-1]["renews"] = token_names[int(anchor.renews)]
                     seals_used[sealed.no] = seal_item
                     manifest["seals"].append(seal_item)
             # attachments of the requested records (and of their album items)

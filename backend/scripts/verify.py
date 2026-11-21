@@ -16,6 +16,7 @@ It ends with VERIFIED or FAILED and explains what the pack proves.
 from __future__ import annotations
 
 import base64
+import calendar
 import hashlib
 import json
 import math
@@ -24,6 +25,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -344,6 +346,18 @@ def key_fingerprint(public_key):
     return "sha256:" + hashlib.sha256(ED25519_SPKI_PREFIX + public_key).hexdigest()
 
 
+def tsa_epoch(text):
+    """`openssl ts -reply -text` prints `Nov 21 06:40:00 2026 GMT`; seconds since the epoch, or None."""
+    if not text:
+        return None
+    try:
+        return calendar.timegm(
+            time.strptime(re.sub(r"\.\d+", "", text.strip()), "%b %d %H:%M:%S %Y GMT")
+        )
+    except ValueError:
+        return None
+
+
 def tsa_time(token_path, cwd):
     code, out = run_openssl(["ts", "-reply", "-in", str(token_path), "-text"], cwd)
     if code != 0:
@@ -433,21 +447,42 @@ def verify_pack(root, report):
             report.skip(
                 "timestamps on seal %d" % no, "the pack holds no trusted timestamp for this seal"
             )
-        for anchor in item.get("anchors", []):
-            label = "timestamp %s on seal %d" % (anchor["token"], no)
-            code, out = run_openssl(
-                [
-                    "ts",
-                    "-verify",
-                    "-in",
-                    anchor["token"],
-                    "-data",
-                    item["stamped"],
-                    "-CAfile",
-                    anchor["chain"],
-                ],
-                root,
-            )
+        listed = item.get("anchors", [])
+        # renewals first: a verified renewal gives the time at which the token it renews
+        # is checked, so an expired authority certificate does not fail an old token
+        ordered = [a for a in listed if a.get("renews")] + [
+            a for a in listed if not a.get("renews")
+        ]
+        renewal_time = {}  # token file -> epoch seconds of its verified renewal
+        for anchor in ordered:
+            if anchor.get("renews"):
+                what = "renewal timestamp"
+            elif anchor.get("kind") == "qualified_tsa":
+                what = "qualified timestamp"
+            else:
+                what = "timestamp"
+            label = "%s %s on seal %d" % (what, anchor["token"], no)
+            data_file = anchor.get("renews") or item["stamped"]
+            args = [
+                "ts",
+                "-verify",
+                "-in",
+                anchor["token"],
+                "-data",
+                data_file,
+                "-CAfile",
+                anchor["chain"],
+            ]
+            code, out = run_openssl(args, root)
+            at_note = ""
+            refused = code is not None and not (code == 0 and "Verification: OK" in out)
+            if refused and anchor["token"] in renewal_time:
+                epoch = renewal_time[anchor["token"]]
+                code, out = run_openssl(args + ["-attime", str(epoch)], root)
+                at_note = (
+                    "; checked at the time of its renewal, %s, because its certificate has expired"
+                    % (time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(epoch)))
+                )
             if code is None:
                 report.skip(label, "not checked: " + out)
             elif code == 0 and "Verification: OK" in out:
@@ -457,10 +492,16 @@ def verify_pack(root, report):
                     anchor.get("url") or anchor.get("issuer", "?"),
                     subject or "certificate unreadable",
                 )
-                detail = "openssl ts -verify: OK; time %s; authority %s" % (when, who)
+                detail = "openssl ts -verify: OK; time %s; authority %s%s" % (when, who, at_note)
+                if anchor.get("renews"):
+                    detail += "; a new token over %s" % anchor["renews"]
                 if is_test_authority(anchor, subject, issuer):
                     detail += "; WARNING: a test or self-run authority, not independent"
                 report.ok(label, detail)
+                if anchor.get("renews"):
+                    epoch = tsa_epoch(when)
+                    if epoch is not None:
+                        renewal_time[anchor["renews"]] = epoch
             else:
                 report.fail(label, "openssl ts -verify refused the token (%s)" % anchor["chain"])
 
@@ -545,20 +586,33 @@ def conclusion(manifest, seals, root):
         seal_no = proof["seal_no"]
         item = next(s for s in manifest["seals"] if s["no"] == seal_no)
         proven = []
+        renewals = []
         warnings = []
         for anchor in item.get("anchors", []):
             when = tsa_time(anchor["token"], root) or anchor.get("gen_time")
             subject, issuer = certificate_names(anchor["chain"], root)
             who = anchor.get("url") or anchor.get("issuer", "?")
-            if when:
-                proven.append("%s by %s%s" % (when, who, " [%s]" % subject if subject else ""))
             if is_test_authority(anchor, subject, issuer):
                 warnings.append(who)
+            if anchor.get("renews"):
+                if when:
+                    renewals.append("%s by %s" % (when, who))
+                continue
+            if when:
+                kind = " (qualified)" if anchor.get("kind") == "qualified_tsa" else ""
+                proven.append(
+                    "%s by %s%s%s" % (when, who, " [%s]" % subject if subject else "", kind)
+                )
         if proven:
             lines.append(
                 "E%d existed with exactly this content no later than: %s (seal %d)."
                 % (seq, "; ".join(proven), seal_no)
             )
+            if renewals:
+                lines.append(
+                    "Its timestamps were renewed (a new token over the old one) on: %s."
+                    % "; ".join(renewals)
+                )
         else:
             lines.append(
                 "E%d is sealed in seal %d; the seal has no trusted timestamp in this pack."

@@ -318,6 +318,7 @@ def test_verify_py_imports_only_the_standard_library():
     allowed = {
         "argparse",
         "base64",
+        "calendar",
         "hashlib",
         "json",
         "math",
@@ -330,6 +331,7 @@ def test_verify_py_imports_only_the_standard_library():
         "zipfile",
         "datetime",
         "tempfile",
+        "time",
         "__future__",
         "typing",
         "dataclasses",

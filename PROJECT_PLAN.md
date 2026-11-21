@@ -540,9 +540,9 @@ As a member who may need stronger proof, I want optional extra timestamps, so th
 
 **Tasks**
 
-- [ ] Implement the daily qualified stamp.
-- [ ] Implement re-timestamping.
-- [ ] Try OpenTimestamps on one seal and decide.
+- [x] Implement the daily qualified stamp.
+- [x] Implement re-timestamping.
+- [x] Try OpenTimestamps on one seal and decide.
 
 **Gate 3 · Stable operation.** 30 nightly audits in a row pass, and a restore drill succeeds.
 

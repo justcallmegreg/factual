@@ -181,6 +181,8 @@ def create_app(
                     if active.telegram_capture_chat_id is not None
                     else None
                 ),
+                qualified_url=active.qualified_tsa_url,
+                timezone=active.timezone,
             )
             sealer.after_seal.append(anchoring.after_seal)
             app.state.jobs = jobs = JobWorker(

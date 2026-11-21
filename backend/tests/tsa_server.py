@@ -50,8 +50,10 @@ def _run(*args: str, cwd: Path) -> None:
 
 
 class LocalTsa:
-    def __init__(self) -> None:
+    def __init__(self, days: int = 3650) -> None:
+        """`days`: validity of the TSA certificate (30 makes an authority that expires soon)."""
         self.dir = Path(tempfile.mkdtemp(prefix="factual-tsa-"))
+        self.days = days
         self.broken = False
         self.requests: list[str] = []
         self._make_certs()
@@ -118,7 +120,7 @@ class LocalTsa:
             "-out",
             "tsa.crt",
             "-days",
-            "3650",
+            str(self.days),
             "-extfile",
             "tsa.cnf",
             "-extensions",
