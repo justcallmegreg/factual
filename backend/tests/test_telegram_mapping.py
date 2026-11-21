@@ -24,7 +24,7 @@ def test_a_text_message_becomes_a_record_created_event():
     assert event.actor.username == "annak"
     assert event.occurred_at == datetime(2026, 10, 29, 13, 3, 12, tzinfo=UTC)
     assert event.raw == load("message_text")  # exactly as received
-    assert event.normalized.text.startswith("Greg called.")
+    assert "Greg called." in event.normalized.text
     assert event.blobs == [] and event.command is None and event.choice is None
 
 

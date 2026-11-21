@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
-from app.connectors.base import Connector, SourceEvent
+from app.connectors.base import Connector
 from app.connectors.telegram.api import AiogramTelegramApi
 from app.connectors.telegram.connector import TelegramConnector, TelegramSettings
 from app.core.logging import configure_logging
@@ -23,6 +23,7 @@ from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.keys import load_signing_key, public_key_bytes
 from app.ledger.ledger import Ledger
+from app.records.ingest import Ingestion
 from app.storage.db import Database, run_migrations
 
 DESCRIPTION = (
@@ -31,19 +32,6 @@ DESCRIPTION = (
     "append-only, hash-chained ledger that is sealed and timestamped every 5 minutes. "
     "The `/api/v1` routes are read-only and need the bearer token from `API_TOKEN`."
 )
-
-
-class LoggingSink:
-    """Until ingestion exists, events are only counted. Replaced by FAC-10."""
-
-    def __init__(self) -> None:
-        self.seen = 0
-
-    async def handle(self, event: SourceEvent) -> None:
-        self.seen += 1
-        logging.getLogger("factual.ingest").debug(
-            "event received", extra={"factual.kind": event.kind}
-        )
 
 
 def build_telegram_connector(settings: Settings) -> TelegramConnector:
@@ -87,7 +75,7 @@ def create_app(
             app.state.ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
             factory = connector_factory or build_telegram_connector
             app.state.connector = connector = factory(active)
-            app.state.sink = sink = LoggingSink()
+            app.state.sink = sink = Ingestion(app.state.ledger, db, timezone=active.timezone)
             polling = asyncio.create_task(connector.start(sink), name="connector")
             log.info("connector started", extra={"factual.connector": connector.type})
         log.info("factual backend started")

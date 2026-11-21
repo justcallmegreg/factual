@@ -233,10 +233,10 @@ As a member, I want everything I send to the capture chat recorded at once, so t
 
 **Tasks**
 
-- [ ] Map `message` and `edited_message` updates to source events and entries.
-- [ ] Build the `record` and `record_version` projections.
-- [ ] Parse the stated event time (`@09:30`) and hashtags into the normalised view.
-- [ ] Test with the fixtures: new message, edit, reply, forward and duplicate.
+- [x] Map `message` and `edited_message` updates to source events and entries.
+- [x] Build the `record` and `record_version` projections.
+- [x] Parse the stated event time (`@09:30`) and hashtags into the normalised view.
+- [x] Test with the fixtures: new message, edit, reply, forward and duplicate.
 
 ### FAC-11 · Acknowledgement mark
 
