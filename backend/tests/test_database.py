@@ -154,7 +154,7 @@ def test_sqlalchemy_url_uses_the_psycopg_driver():
     assert sqlalchemy_url("postgres://u:p@h/d") == "postgresql+psycopg://u:p@h/d"
 
 
-def test_the_app_applies_the_migrations_at_start(settings, template_database):
+def test_the_app_applies_the_migrations_at_start(settings, template_database, key_files):
     """A database that was never migrated gets its tables when the app starts."""
     from sqlalchemy.engine import make_url
 
@@ -167,7 +167,14 @@ def test_the_app_applies_the_migrations_at_start(settings, template_database):
         admin.execute(f'CREATE DATABASE "{name}"')
     url = make_url(TEST_DATABASE_URL).set(database=name).render_as_string(hide_password=False)
     try:
-        with TestClient(create_app(settings=settings.model_copy(update={"database_url": url}))):
+        started = settings.model_copy(
+            update={
+                "database_url": url,
+                "signing_key_file": key_files[0],
+                "master_key_file": key_files[1],
+            }
+        )
+        with TestClient(create_app(settings=started)):
             with connect(url) as conn:
                 assert set(columns(conn, "ledger_entry")) == {
                     "seq",

@@ -33,7 +33,7 @@ Factual ships as one container: a FastAPI process that also runs the Telegram co
 ## Five-minute start
 
 1. Create the bot with @BotFather, name it Thoth and disable privacy mode. Create a private Telegram group, add the people who may record and recall, and add Thoth. `backend/README.md` has the step-by-step set-up.
-2. `cd backend && cp .env.example .env`, then fill in the variables.
+2. `cd backend && cp .env.example .env`, fill in the variables, and run `make keys` to create the signing key and the master key.
 3. `make up` starts the backend, PostgreSQL and an S3-compatible store with Docker Compose. `make down` stops them. `make help` lists every target.
 4. Send a message to the group. Thoth records it, marks it with ✍ and asks for its project.
 

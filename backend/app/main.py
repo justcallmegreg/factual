@@ -18,6 +18,8 @@ from app.api.health import router as health_router
 from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
+from app.ledger.keys import load_signing_key, public_key_bytes
+from app.ledger.ledger import Ledger
 from app.storage.db import Database, run_migrations
 
 DESCRIPTION = (
@@ -46,6 +48,8 @@ def create_app(settings: Settings | None = None, *, start_services: bool = True)
             log.info("applying migrations")
             await asyncio.to_thread(run_migrations, active.database_url)
             app.state.db = db = Database(active.database_url)
+            signing_key = load_signing_key(active.signing_key_file)
+            app.state.ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
         log.info("factual backend started")
         yield
         if db is not None:

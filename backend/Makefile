@@ -8,7 +8,7 @@ BUILD_ARGS ?=
 export VERSION
 
 .DEFAULT_GOAL := help
-.PHONY: help build up down run swagger swagger-check test lint
+.PHONY: help build up down run keys swagger swagger-check test lint
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
@@ -21,6 +21,9 @@ up: ## Start backend, PostgreSQL and S3 storage with Docker Compose
 
 down: ## Stop the Compose stack
 	docker compose down
+
+keys: ## Create the signing key and the master key in ./secrets
+	$(PYTHON) -m app keys --dir secrets
 
 run: ## Run the backend on this machine with auto-reload
 	APP_VERSION=$(VERSION) $(PYTHON) -m app --reload --port 8000

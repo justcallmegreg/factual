@@ -146,6 +146,24 @@ def database_url(template_database):
 
 
 @pytest.fixture
-def db_settings(settings, database_url):
-    """Settings whose DATABASE_URL points at a fresh test database."""
-    return settings.model_copy(update={"database_url": database_url})
+def key_files(tmp_path):
+    """A fresh signing key and master key, as the operator would create with `make keys`."""
+    from app.ledger.keys import generate_master_key, generate_signing_key
+
+    signing, master = tmp_path / "signing-key.pem", tmp_path / "master.key"
+    generate_signing_key(signing)
+    generate_master_key(master)
+    return signing, master
+
+
+@pytest.fixture
+def db_settings(settings, database_url, key_files):
+    """Settings whose DATABASE_URL points at a fresh test database, with real key files."""
+    signing, master = key_files
+    return settings.model_copy(
+        update={
+            "database_url": database_url,
+            "signing_key_file": signing,
+            "master_key_file": master,
+        }
+    )

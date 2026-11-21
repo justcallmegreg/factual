@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     LargeBinary,
     MetaData,
     Table,
@@ -44,7 +45,17 @@ evidence_payload = Table(
     Column("payload", LargeBinary, nullable=False, comment="canonical payload bytes"),
 )
 
-EVIDENCE_TABLES = ("ledger_entry", "evidence_payload")
+instance = Table(
+    "instance",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("public_key", LargeBinary, nullable=False, comment="raw Ed25519 public key"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("genesis_hash", LargeBinary, nullable=False),
+    CheckConstraint("id = 1", name="instance_single_row"),
+)
+
+EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance")
 
 # --- projections -----------------------------------------------------------------------
 

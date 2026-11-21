@@ -196,10 +196,10 @@ As a member, I want every record chained to the one before it, so that nobody ca
 
 **Tasks**
 
-- [ ] Implement the canonical encoding, `entry_hash`, `payload_commitment` and `chain_hash`.
-- [ ] Implement `append()` with the advisory lock and the duplicate guard on `source_event`.
-- [ ] Implement `verify_chain()` and the chain proof for one entry.
-- [ ] Write property tests and the crash-and-replay test.
+- [x] Implement the canonical encoding, `entry_hash`, `payload_commitment` and `chain_hash`.
+- [x] Implement `append()` with the advisory lock and the duplicate guard on `source_event`.
+- [x] Implement `verify_chain()` and the chain proof for one entry.
+- [x] Write property tests and the crash-and-replay test.
 
 ### FAC-09 · Connector interface and Thoth
 

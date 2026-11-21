@@ -17,8 +17,9 @@ Thoth serves exactly one private Telegram group, the capture chat.
 
 1. Create the bot with @BotFather, name it Thoth, and disable privacy mode with `/setprivacy` so that it receives every message in the group. A privacy change only applies after the bot is removed from the group and added again.
 2. Create a private group, add the people who may record and recall, and add Thoth.
-3. Set `TELEGRAM_BOT_TOKEN`. Start the backend with `TELEGRAM_CAPTURE_CHAT_ID` unset: Thoth records nothing and replies in the group with the group's chat ID.
-4. Set `TELEGRAM_CAPTURE_CHAT_ID` to that ID and restart. Thoth now records every message in the group, leaves every other group and answers a private message with one line.
+3. `cp .env.example .env`, set `TELEGRAM_BOT_TOKEN` and the other required variables, and run `make keys`: it creates the Ed25519 signing key and the master key in `./secrets` (mode 0600, never overwritten). The chain's genesis value is derived from the public key, so keep the signing key as safe as the database.
+4. Start the backend with `TELEGRAM_CAPTURE_CHAT_ID` unset: Thoth records nothing and replies in the group with the group's chat ID.
+5. Set `TELEGRAM_CAPTURE_CHAT_ID` to that ID and restart. Thoth now records every message in the group, leaves every other group and answers a private message with one line.
 
 Everyone in the capture chat can use every command and every project, so membership of the group is the only access control. Keep the group private.
 
@@ -59,6 +60,7 @@ The service refuses to start when a required variable is missing and names the v
 | `build` | Builds one image for `linux/amd64` and `linux/arm64`, tagged with the version from `../VERSION.txt` |
 | `up` | Starts the backend, PostgreSQL and an S3-compatible store with Docker Compose |
 | `down` | Stops the Compose stack |
+| `keys` | Creates the signing key and the master key in `./secrets` |
 | `run` | Runs the backend on your machine with auto-reload |
 | `swagger`, `swagger-check` | Regenerates `swagger.json`, or fails if it is out of date |
 | `test`, `lint` | Runs pytest and Ruff |

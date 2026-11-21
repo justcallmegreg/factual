@@ -154,7 +154,9 @@ def test_the_image_has_a_health_check_on_healthz(built_image):
 
 
 @needs_docker
-def test_the_container_serves_the_version_from_the_build_argument(built_image, database_url):
+def test_the_container_serves_the_version_from_the_build_argument(
+    built_image, database_url, key_files
+):
     env_file = BACKEND / ".env.example"
     name = f"factual-test-{uuid.uuid4().hex[:8]}"
     # the container reaches the fresh test database on the host
@@ -171,6 +173,8 @@ def test_the_container_serves_the_version_from_the_build_argument(built_image, d
             "0:8000",
             "--add-host",
             "host.docker.internal:host-gateway",
+            "-v",
+            f"{key_files[0].parent}:/app/secrets:ro",
             "--env-file",
             str(env_file),
             "-e",
