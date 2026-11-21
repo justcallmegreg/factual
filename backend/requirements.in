@@ -1,0 +1,15 @@
+# Runtime dependencies — compile with: uv pip compile requirements.in -o requirements.txt
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy[asyncio]
+alembic
+psycopg[binary,pool]
+aiogram
+anthropic
+cryptography
+ecs-logging
+boto3
+httpx
+rfc3161-client

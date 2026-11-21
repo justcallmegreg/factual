@@ -27,7 +27,14 @@ def test_version_is_written_nowhere_else():
 
 def test_root_readme_describes_factual_structure_and_version():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    for needle in ("Factual", "Thoth", "VERSION.txt", "backend/", "frontend/", "Semantic Versioning"):
+    for needle in (
+        "Factual",
+        "Thoth",
+        "VERSION.txt",
+        "backend/",
+        "frontend/",
+        "Semantic Versioning",
+    ):
         assert needle in text, needle
 
 

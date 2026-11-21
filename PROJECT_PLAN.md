@@ -92,10 +92,10 @@ As a developer, I want a running FastAPI service with typed settings, so that ev
 
 **Tasks**
 
-- [ ] Create `backend/app` with the app factory and the lifespan hook.
-- [ ] Add the settings class and the version reader (`APP_VERSION`, else `../VERSION.txt`).
-- [ ] Add the health and version routes with tests.
-- [ ] Pin the dependencies in `requirements.txt` and `requirements-dev.txt`.
+- [x] Create `backend/app` with the app factory and the lifespan hook.
+- [x] Add the settings class and the version reader (`APP_VERSION`, else `../VERSION.txt`).
+- [x] Add the health and version routes with tests.
+- [x] Pin the dependencies in `requirements.txt` and `requirements-dev.txt`.
 
 ### FAC-03 · Structured logging
 
