@@ -58,7 +58,7 @@ instance = Table(
     CheckConstraint("id = 1", name="instance_single_row"),
 )
 
-EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance", "blob", "seal")
+EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance", "blob", "seal", "seal_anchor")
 
 # --- projections -----------------------------------------------------------------------
 
@@ -237,4 +237,19 @@ seal = Table(
     Column("key_id", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Index("seal_up_to_idx", "up_to_seq"),
+)
+
+seal_anchor = Table(
+    "seal_anchor",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("seal_no", BigInteger, ForeignKey("seal.no"), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("issuer", Text, nullable=False),
+    Column("proof", LargeBinary, nullable=False),
+    Column("chain_pem", LargeBinary),
+    Column("gen_time", DateTime(timezone=True)),
+    Column("policy", Text),
+    Column("added_at", DateTime(timezone=True), nullable=False),
+    Index("seal_anchor_seal_idx", "seal_no", "kind"),
 )

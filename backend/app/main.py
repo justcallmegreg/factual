@@ -12,20 +12,23 @@ import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.commands.dispatcher import CommandDispatcher
 from app.commands.menu import COMMANDS
-from app.connectors.base import Connector
+from app.connectors.base import ChatRef, Connector
 from app.connectors.telegram.api import AiogramTelegramApi
 from app.connectors.telegram.connector import TelegramConnector, TelegramSettings
 from app.core.logging import configure_logging
 from app.core.settings import Settings
 from app.core.version import read_version
+from app.ledger.anchors import ANCHOR_JOB, SealAnchoring
 from app.ledger.keys import load_signing_key, public_key_bytes
 from app.ledger.ledger import Ledger
 from app.ledger.seals import Sealer
+from app.ledger.tsa import TimestampClient
 from app.ledger.verify import Verifier
 from app.records.attachments import AttachmentFetcher, AttachmentIntake
 from app.records.filing import Filing
@@ -79,6 +82,7 @@ def create_app(
         job_task: asyncio.Task[None] | None = None
         sealer: Sealer | None = None
         seal_task: asyncio.Task[None] | None = None
+        tsa_http: httpx.AsyncClient | None = None
         if start_services:
             log.info("applying migrations")
             await asyncio.to_thread(run_migrations, active.database_url)
@@ -141,7 +145,22 @@ def create_app(
                 attachments=intake,
                 connector=connector,
             )
-            app.state.jobs = jobs = JobWorker(db, {AttachmentFetcher.KIND: fetcher})
+            tsa_http = httpx.AsyncClient()
+            anchoring = SealAnchoring(
+                db,
+                connector,
+                TimestampClient(tsa_http),
+                urls=active.tsa_urls,
+                capture_chat=(
+                    ChatRef("telegram", active.telegram_capture_chat_id)
+                    if active.telegram_capture_chat_id is not None
+                    else None
+                ),
+            )
+            sealer.after_seal.append(anchoring.after_seal)
+            app.state.jobs = jobs = JobWorker(
+                db, {AttachmentFetcher.KIND: fetcher, ANCHOR_JOB: anchoring}
+            )
             job_task = asyncio.create_task(jobs.start(), name="jobs")
             polling = asyncio.create_task(connector.start(sink), name="connector")
             log.info("connector started", extra={"factual.connector": connector.type})
@@ -171,6 +190,8 @@ def create_app(
             close = getattr(getattr(connector, "api", None), "close", None)
             if close is not None:
                 await close()
+        if tsa_http is not None:
+            await tsa_http.aclose()
         if db is not None:
             await db.dispose()
         log.info("factual backend stopped")

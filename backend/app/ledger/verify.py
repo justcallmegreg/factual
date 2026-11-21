@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -31,6 +32,7 @@ class SealInfo:
     no: int
     up_to_seq: int
     created_at: str
+    anchors: tuple[tuple[str, str], ...] = ()  # (authority host, time) per trusted timestamp
 
 
 @dataclass(frozen=True)
@@ -93,7 +95,21 @@ class Verifier:
             (f"chain proof to seal {sealed.no}", proof_ok),
             ("seal signature", signature_ok),
         ]
-        info = SealInfo(sealed.no, sealed.up_to_seq, sealed.fields.get("created_at", ""))
+        from app.ledger.anchors import host_of
+        from app.storage.models import seal_anchor
+
+        anchor_rows = (
+            await conn.execute(
+                select(seal_anchor.c.issuer, seal_anchor.c.gen_time)
+                .where(seal_anchor.c.seal_no == sealed.no, seal_anchor.c.gen_time.is_not(None))
+                .order_by(seal_anchor.c.id)
+            )
+        ).all()
+        anchors = tuple(
+            (host_of(r.issuer), r.gen_time.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            for r in anchor_rows
+        )
+        info = SealInfo(sealed.no, sealed.up_to_seq, sealed.fields.get("created_at", ""), anchors)
         if proof_ok and signature_ok:
             return Verification(Status("Verified", sealed.no), checks, base.entry, info)
         reason = "chain proof mismatch" if not proof_ok else "seal signature invalid"

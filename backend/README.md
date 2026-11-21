@@ -60,6 +60,14 @@ A file over 20 MB (the cloud Bot API limit) gets an `attachment.unavailable` ent
 
 Every `SEAL_INTERVAL_SECONDS` (default 300) the sealer looks for entries beyond the last seal and, when there are any, writes a seal: `{v, no, up_to_seq, chain_head, prev_seal, created_at, key_id}` as canonical JSON, where `chain_head` is the chain value at the last entry and `prev_seal` is `SHA-256("ledger-seal-v1" ‖ previous seal)` (for the first seal, the hash of the chain's genesis value). The seal is signed with Ed25519 by the key in `SIGNING_KEY_FILE`; `key_id` is the key's fingerprint, `sha256:` over its DER public key, which `/status` shows. `/verify` and every `/ask` hit show the first seal that covers the entry, after checking the chain proof from the entry to that seal's head and the seal's signature. The `seal` table is insert-only like the other evidence tables.
 
+### Trusted timestamps
+
+After every seal, one job per address in `TSA_URLS` requests an RFC 3161 token over `SHA-256(seal ‖ signature)` with a fresh nonce and the signer certificates included. The response is checked (granted, imprint equal to the digest, nonce echoed) and stored in `seal_anchor` with the TSA's certificate chain, its time and its policy; `openssl ts -verify -in <token> -data <seal ‖ signature> -CAfile <chain>` accepts every stored token, which is exactly the check an evidence pack's reader runs. A failed request is retried with a growing delay (30 s, 1 min, 2 min, …, ten attempts); after three failed attempts Thoth reports it in the capture chat, and after the last one it says that the seal has no timestamp from that authority.
+
+Pick authorities whose tokens include their full certificate chain, so that the token verifies offline with its own chain: `https://freetsa.org/tsr` and `http://zeitstempel.dfn.de` (the defaults) do, as does `http://tsa.belgium.be/connect`. DigiCert's and Sectigo's tokens do not include their root certificate and cannot be verified from the pack alone, so they are not recommended. Responses that the strict parser refuses are read with `openssl ts -reply -text` instead.
+
+The tests run a local authority built on `openssl ts` (`tests/tsa_server.py`); one test also stamps against the two public defaults when the network allows.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

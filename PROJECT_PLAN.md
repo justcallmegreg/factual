@@ -381,9 +381,9 @@ As an outsider, I want each seal stamped by independent time-stamping authoritie
 
 **Tasks**
 
-- [ ] Implement the RFC 3161 request and the response check.
-- [ ] Store the tokens in `seal_anchor`.
-- [ ] Add retries and the alert, and test against two public TSAs.
+- [x] Implement the RFC 3161 request and the response check.
+- [x] Store the tokens in `seal_anchor`.
+- [x] Add retries and the alert, and test against two public TSAs.
 
 ### FAC-19 · Evidence packs and offline verifier
 

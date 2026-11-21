@@ -58,6 +58,7 @@ class Chat:
         timezone: str = "Europe/Amsterdam",
         attachments: bool = False,
         seals: bool = False,
+        tsa_urls: list[str] | None = None,
         **options,
     ) -> Chat:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -90,11 +91,12 @@ class Chat:
             **options,
         )
         store = master_key = worker = intake = None
+        handlers: dict = {}
         if attachments:
             store = InMemoryObjectStore()
             master_key = os.urandom(32)
             intake = AttachmentIntake(max_bytes=20 * 1024 * 1024, clock=clock)
-            fetcher = AttachmentFetcher(
+            handlers[AttachmentFetcher.KIND] = AttachmentFetcher(
                 ledger,
                 db,
                 connector,
@@ -104,9 +106,25 @@ class Chat:
                 clock=clock,
                 timezone=timezone,
             )
-            worker = JobWorker(
-                db, {AttachmentFetcher.KIND: fetcher}, clock=clock, poll_interval=0.01
+        if sealer is not None and tsa_urls:
+            import httpx
+
+            from app.connectors.base import ChatRef
+            from app.ledger.anchors import ANCHOR_JOB, SealAnchoring
+            from app.ledger.tsa import TimestampClient
+
+            anchoring = SealAnchoring(
+                db,
+                connector,
+                TimestampClient(httpx.AsyncClient()),
+                urls=tsa_urls,
+                capture_chat=ChatRef("telegram", CAPTURE_CHAT_ID),
+                clock=clock,
             )
+            sealer.after_seal.append(anchoring.after_seal)
+            handlers[ANCHOR_JOB] = anchoring
+        if handlers:
+            worker = JobWorker(db, handlers, clock=clock, poll_interval=0.01)
         ingestion = Ingestion(
             ledger,
             db,

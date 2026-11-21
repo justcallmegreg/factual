@@ -82,6 +82,11 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
     if verification.seal is not None:
         info = verification.seal
         lines.append(f"Seal {info.no} · {info.created_at} · covers up to E{info.up_to_seq}")
+        if info.anchors:
+            stamped = "; ".join(f"{host} at {when}" for host, when in info.anchors)
+            lines.append(f"Timestamped by {stamped}")
+        else:
+            lines.append("Timestamp: pending")
     if rec is not None and int(rec.version) > 1 and rec.edited_at is not None:
         lines.append(f"Versions: {rec.version} (edited {format_local(rec.edited_at, zone)})")
     if rec is not None:

@@ -15,4 +15,4 @@ ignore = ["S101"]  # assert is fine in tests and for invariants
 
 [tool.ruff.lint.per-file-ignores]
 "app/storage/grants.py" = ["S608"]  # DDL constants with fixed identifiers, no user input
-"tests/*" = ["S105", "S106", "S108", "S603", "S607"]  # subprocess with fixed argv is fine in tests
+"tests/*" = ["S105", "S106", "S108", "S603", "S607", "ASYNC221", "ASYNC240"]  # tests may block
