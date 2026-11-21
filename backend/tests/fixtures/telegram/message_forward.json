@@ -1,0 +1,38 @@
+{
+  "update_id": 553201181,
+  "message": {
+    "message_id": 8815,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279392,
+    "forward_origin": {
+      "type": "user",
+      "sender_user": {
+        "id": 51234568,
+        "is_bot": false,
+        "first_name": "Greg",
+        "last_name": "S."
+      },
+      "date": 1793277600
+    },
+    "forward_from": {
+      "id": 51234568,
+      "is_bot": false,
+      "first_name": "Greg",
+      "last_name": "S."
+    },
+    "forward_date": 1793277600,
+    "text": "Let's do the kickoff on 5 February, 10:00 at your office."
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "update_id": 553201189,
+  "callback_query": {
+    "id": "4382bfdc1d4a3ad7",
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "message": {
+      "message_id": 8813,
+      "from": {
+        "id": 7000000001,
+        "is_bot": true,
+        "first_name": "Thoth",
+        "username": "FactualThothBot"
+      },
+      "chat": {
+        "id": -1001234567890,
+        "title": "Factual",
+        "type": "supergroup"
+      },
+      "date": 1793278994,
+      "text": "Recorded E41502 · Thu 29 Oct 2026, 14:03 CET. Which project?",
+      "reply_to_message": {
+        "message_id": 8812,
+        "from": {
+          "id": 51234567,
+          "is_bot": false,
+          "first_name": "Anna",
+          "last_name": "K.",
+          "username": "annak",
+          "language_code": "en"
+        },
+        "chat": {
+          "id": -1001234567890,
+          "title": "Factual",
+          "type": "supergroup"
+        },
+        "date": 1793278992,
+        "text": "Greg called."
+      }
+    },
+    "chat_instance": "-1234567890123456789",
+    "data": "f:1:client-acme"
+  }
+}

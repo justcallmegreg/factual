@@ -23,6 +23,12 @@ Thoth serves exactly one private Telegram group, the capture chat.
 
 Everyone in the capture chat can use every command and every project, so membership of the group is the only access control. Keep the group private.
 
+### Connectors
+
+Telegram sits behind the connector interface in `app/connectors/base.py`; the core never imports a platform SDK. Thoth (`app/connectors/telegram/`) polls `getUpdates` with long polling (no inbound port), turns messages, edits, slash commands and button taps into platform-neutral events, and moves its offset past an update only after the ledger has committed it. A crash between the commit and the next poll makes Telegram deliver the update again; the ledger drops the duplicate by its event id. Messages from bots (Thoth's own included), service messages and commands addressed to another bot are not recorded.
+
+Every connector passes the contract tests in `tests/test_connector_contract.py`, which replay recorded updates: a new message, an edit, an attachment, a duplicate delivery, a button tap, and the rule that the acknowledgement follows the commit. The Telegram fixtures in `tests/fixtures/telegram/` were built from the Bot API reference while no bot token was available; replace them with recordings from the real capture chat when you have one.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

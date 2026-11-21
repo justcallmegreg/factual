@@ -1,0 +1,23 @@
+{
+  "update_id": 553201190,
+  "message": {
+    "message_id": 42,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": 51234567,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "type": "private"
+    },
+    "date": 1793279992,
+    "text": "hi Thoth, are you there?"
+  }
+}

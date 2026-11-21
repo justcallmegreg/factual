@@ -1,0 +1,19 @@
+{
+  "update_id": 553201191,
+  "message": {
+    "message_id": 77,
+    "from": {
+      "id": 51234568,
+      "is_bot": false,
+      "first_name": "Greg",
+      "last_name": "S."
+    },
+    "chat": {
+      "id": -1009876543210,
+      "title": "Book club",
+      "type": "supergroup"
+    },
+    "date": 1793280092,
+    "text": "next book: Dune"
+  }
+}

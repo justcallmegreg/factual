@@ -1,0 +1,35 @@
+{
+  "update_id": 553201192,
+  "my_chat_member": {
+    "chat": {
+      "id": -1009876543210,
+      "title": "Book club",
+      "type": "supergroup"
+    },
+    "from": {
+      "id": 51234568,
+      "is_bot": false,
+      "first_name": "Greg",
+      "last_name": "S."
+    },
+    "date": 1793280042,
+    "old_chat_member": {
+      "user": {
+        "id": 7000000001,
+        "is_bot": true,
+        "first_name": "Thoth",
+        "username": "FactualThothBot"
+      },
+      "status": "left"
+    },
+    "new_chat_member": {
+      "user": {
+        "id": 7000000001,
+        "is_bot": true,
+        "first_name": "Thoth",
+        "username": "FactualThothBot"
+      },
+      "status": "member"
+    }
+  }
+}

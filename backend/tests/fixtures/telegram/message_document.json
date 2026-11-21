@@ -1,0 +1,28 @@
+{
+  "update_id": 553201184,
+  "message": {
+    "message_id": 8818,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279592,
+    "document": {
+      "file_name": "contract-v2.pdf",
+      "mime_type": "application/pdf",
+      "file_id": "BQACDOC1",
+      "file_unique_id": "DOC1",
+      "file_size": 348112
+    },
+    "caption": "Signed contract #contract"
+  }
+}

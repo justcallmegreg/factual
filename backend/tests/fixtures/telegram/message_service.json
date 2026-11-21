@@ -1,0 +1,25 @@
+{
+  "update_id": 553201194,
+  "message": {
+    "message_id": 8823,
+    "from": {
+      "id": 51234568,
+      "is_bot": false,
+      "first_name": "Greg",
+      "last_name": "S."
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793280192,
+    "new_chat_members": [
+      {
+        "id": 51234569,
+        "is_bot": false,
+        "first_name": "Ola"
+      }
+    ]
+  }
+}

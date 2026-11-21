@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from sqlalchemy import text
 
+from app.connectors.null import NullConnector
+
 EVIDENCE_TABLES = ("ledger_entry", "evidence_payload")
 
 
@@ -174,7 +176,7 @@ def test_the_app_applies_the_migrations_at_start(settings, template_database, ke
                 "master_key_file": key_files[1],
             }
         )
-        with TestClient(create_app(settings=started)):
+        with TestClient(create_app(settings=started, connector_factory=lambda _: NullConnector())):
             with connect(url) as conn:
                 assert set(columns(conn, "ledger_entry")) == {
                     "seq",
@@ -193,7 +195,7 @@ def test_the_app_applies_the_migrations_at_start(settings, template_database, ke
 def test_readyz_reports_the_database_state(db_settings):
     from app.main import create_app
 
-    app = create_app(settings=db_settings)
+    app = create_app(settings=db_settings, connector_factory=lambda _: NullConnector())
     with TestClient(app) as client:
         ready = client.get("/readyz")
         assert ready.status_code == 200

@@ -214,10 +214,10 @@ As a developer, I want Telegram behind a connector interface, so that another so
 
 **Tasks**
 
-- [ ] Define the protocol, the event types and the capability flags.
-- [ ] Implement the Telegram connector with aiogram and long polling.
-- [ ] Record fixtures for a message, an edit, a duplicate delivery and a button tap.
-- [ ] Write the set-up part of `backend/README.md`: BotFather, privacy mode, the group and the chat ID.
+- [x] Define the protocol, the event types and the capability flags.
+- [x] Implement the Telegram connector with aiogram and long polling.
+- [x] Record fixtures for a message, an edit, a duplicate delivery and a button tap.
+- [x] Write the set-up part of `backend/README.md`: BotFather, privacy mode, the group and the chat ID.
 
 ### FAC-10 · Record messages
 

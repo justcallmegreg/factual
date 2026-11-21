@@ -21,6 +21,7 @@ from app.core.settings import MIN_SECRET_LENGTH
 
 SERVICE_NAME = "factual-backend"
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+NOISY_LOGGERS = ("httpx", "httpcore", "aiogram.event")
 REDACTED = "[redacted]"
 
 # Context fields a log line may carry. Identifiers and counts only.
@@ -105,6 +106,8 @@ def configure_logging(
             uvicorn_logger.removeHandler(existing)
         uvicorn_logger.propagate = True
         uvicorn_logger.setLevel(logging.NOTSET)
+    for name in NOISY_LOGGERS:  # request lines would carry URLs with the bot token
+        logging.getLogger(name).setLevel(max(logging.WARNING, logging.getLogger().level))
     return formatter
 
 

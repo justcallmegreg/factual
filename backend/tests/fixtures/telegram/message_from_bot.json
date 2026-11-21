@@ -1,0 +1,19 @@
+{
+  "update_id": 553201193,
+  "message": {
+    "message_id": 8813,
+    "from": {
+      "id": 7000000001,
+      "is_bot": true,
+      "first_name": "Thoth",
+      "username": "FactualThothBot"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793278994,
+    "text": "Recorded E41502 · Thu 29 Oct 2026, 14:03 CET. Which project?"
+  }
+}

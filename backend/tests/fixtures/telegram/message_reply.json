@@ -1,0 +1,37 @@
+{
+  "update_id": 553201180,
+  "message": {
+    "message_id": 8814,
+    "from": {
+      "id": 51234568,
+      "is_bot": false,
+      "first_name": "Greg",
+      "last_name": "S."
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279292,
+    "reply_to_message": {
+      "message_id": 8812,
+      "from": {
+        "id": 51234567,
+        "is_bot": false,
+        "first_name": "Anna",
+        "last_name": "K.",
+        "username": "annak",
+        "language_code": "en"
+      },
+      "chat": {
+        "id": -1001234567890,
+        "title": "Factual",
+        "type": "supergroup"
+      },
+      "date": 1793278992,
+      "text": "Greg called. He may move the kickoff to 12 February; he will confirm by mail. #call @09:30"
+    },
+    "text": "He confirmed by mail: 12 February it is."
+  }
+}

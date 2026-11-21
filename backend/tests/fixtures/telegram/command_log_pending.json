@@ -1,0 +1,28 @@
+{
+  "update_id": 553201187,
+  "message": {
+    "message_id": 8821,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279892,
+    "text": "/log pending",
+    "entities": [
+      {
+        "offset": 0,
+        "length": 4,
+        "type": "bot_command"
+      }
+    ]
+  }
+}

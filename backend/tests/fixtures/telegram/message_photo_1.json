@@ -1,0 +1,45 @@
+{
+  "update_id": 553201182,
+  "message": {
+    "message_id": 8816,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279492,
+    "media_group_id": "13553201182",
+    "photo": [
+      {
+        "file_id": "AgACP1s",
+        "file_unique_id": "P1s",
+        "file_size": 1234,
+        "width": 90,
+        "height": 120
+      },
+      {
+        "file_id": "AgACP1m",
+        "file_unique_id": "P1m",
+        "file_size": 20480,
+        "width": 320,
+        "height": 427
+      },
+      {
+        "file_id": "AgACP1y",
+        "file_unique_id": "P1y",
+        "file_size": 102400,
+        "width": 800,
+        "height": 1067
+      }
+    ],
+    "caption": "The letter, page 1 and 2"
+  }
+}

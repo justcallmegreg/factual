@@ -1,0 +1,28 @@
+{
+  "update_id": 553201188,
+  "message": {
+    "message_id": 8822,
+    "from": {
+      "id": 51234567,
+      "is_bot": false,
+      "first_name": "Anna",
+      "last_name": "K.",
+      "username": "annak",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Factual",
+      "type": "supergroup"
+    },
+    "date": 1793279942,
+    "text": "/help@FactualThothBot",
+    "entities": [
+      {
+        "offset": 0,
+        "length": 21,
+        "type": "bot_command"
+      }
+    ]
+  }
+}
