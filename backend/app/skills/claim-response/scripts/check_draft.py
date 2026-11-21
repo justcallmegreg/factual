@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a claim-response draft: citations, quotes, sentence length and banned phrases.
 
-Usage: python3 check_draft.py DRAFT.txt   (exit 0 when the draft passes, 1 with the errors)
+Usage: python3 -I -S check_draft.py DRAFT.txt   (exit 0 when the draft passes, 1 with the errors)
 Only the standard library is used, so the same file runs inside Thoth and in Claude Code.
 """
 
@@ -11,9 +11,15 @@ import re
 import sys
 
 MAX_WORDS = 20
-CITATION = re.compile(r"\(E\d+(?:,\s*E\d+)*\)")
+CITATION = re.compile(r"\(E\d+(?:,\s*E\d+)*\)")  # (E41233) or (E41233, E41502)
+ENTRY = re.compile(r"E(\d+)")
 QUOTE = re.compile(r"\[\[quote:\d+\]\]")
 SENTENCE_END = re.compile(r"(?<=[.?!])\s+(?=[A-Z\[(\-\"'])|(?<=[.?!])$")
+SALUTATION = re.compile(r"^(hi|hello|dear|good (morning|afternoon|evening))\b[^\n]{0,60}$", re.I)
+SCOPE_SENTENCE = re.compile(
+    r"^(I|We) (checked|searched|looked)\b|\bfrom .+? to .+?\b|\bbetween .+? and .+?\b", re.I
+)
+ABBREVIATIONS = ("Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "e.g.", "i.e.", "etc.", "vs.", "No.", "St.")
 BANNED = [
     "stupid",
     "ridiculous",
@@ -56,7 +62,7 @@ BANNED = [
     "you changed your mind",
     "unacceptable",
 ]
-# sentences without a citation may only frame, ask or propose
+# sentences without a citation may only frame, ask, propose or give the writer's own account
 ALLOWED_OPENERS = (
     "i want",
     "i think",
@@ -66,6 +72,19 @@ ALLOWED_OPENERS = (
     "i attach",
     "i propose",
     "i suggest",
+    "i checked",
+    "i searched",
+    "i looked",
+    "i prepared",
+    "i planned",
+    "i understood",
+    "i expected",
+    "i assumed",
+    "i am ",
+    "i'm ",
+    "i cannot find",
+    "i could not find",
+    "my note",
     "can we",
     "could we",
     "shall we",
@@ -75,24 +94,28 @@ ALLOWED_OPENERS = (
     "if ",
     "let's",
     "lets",
-    "hi ",
-    "hi,",
-    "hello",
-    "dear",
     "thank",
     "thanks",
     "kind regards",
     "best regards",
     "regards",
-    "my note",
-    "i cannot find",
-    "i could not find",
-    "i am ",
-    "i'm ",
 )
 SECTION_RECORDS = "what the records show"
 SECTION_GAPS = "what i cannot find"
 SECTION_QUESTIONS = "questions"
+SECTIONS = (SECTION_RECORDS, SECTION_GAPS, SECTION_QUESTIONS)
+
+
+def cited_entries(text: str) -> list[int]:
+    """Every entry number cited as (E41233) or (E41233, E41502), in order of appearance."""
+    return [int(n) for group in CITATION.findall(text) for n in ENTRY.findall(group)]
+
+
+def protect(text: str) -> str:
+    """Abbreviations lose their sentence-ending dot, so `Mr. Smith` stays one sentence."""
+    for abbreviation in ABBREVIATIONS:
+        text = text.replace(abbreviation, abbreviation[:-1] + "․")
+    return text
 
 
 def strip_placeholders(text: str) -> str:
@@ -105,51 +128,73 @@ def words(sentence: str) -> int:
 
 
 def sentences(text: str) -> list[str]:
-    parts = [p.strip() for p in SENTENCE_END.split(text) if p and p.strip()]
-    return parts
+    return [p.strip() for p in SENTENCE_END.split(text) if p and p.strip()]
 
 
 def banned_in(sentence: str) -> list[str]:
-    lowered = " " + re.sub(r"[^\w' ]+", " ", sentence.lower()) + " "
     found = []
     for phrase in BANNED:
-        if " " + phrase + " " in lowered:
+        for match in re.finditer(r"(?<![\w'])" + re.escape(phrase) + r"(?![\w'])", sentence, re.I):
+            word = match.group(0)
+            if (
+                " " not in phrase
+                and match.start() > 0
+                and word[:1].isupper()
+                and word[1:].islower()
+            ):
+                continue  # a capitalised word inside a sentence is a name (Sue, Bill)
             found.append(phrase)
+            break
     return found
 
 
 def check_draft(text: str) -> list[str]:
     errors: list[str] = []
     section = ""
+    gaps_without_scope: list[int] = []
+    gaps_scope = False
+
+    def close_gaps() -> None:
+        if gaps_without_scope and not gaps_scope:
+            for number in gaps_without_scope:
+                errors.append(
+                    f"line {number}: a gap needs its search scope: dates and terms in parentheses, "
+                    "or a sentence in this section such as 'I checked my records from … to …'"
+                )
+        gaps_without_scope.clear()
+
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
             continue
         lowered = line.lower().rstrip(":")
-        if lowered in (SECTION_RECORDS, SECTION_GAPS, SECTION_QUESTIONS):
+        if lowered in SECTIONS:
+            if section == SECTION_GAPS:
+                close_gaps()
             section = lowered
             continue
-        if line.startswith(("DRAFT", "BRIEF")):
+        if line.startswith(("DRAFT", "BRIEF")) or SALUTATION.match(line):
             continue
         is_bullet = line.startswith("- ")
-        body = line[2:] if is_bullet else line
+        body = protect(line[2:] if is_bullet else line)
         for sentence in sentences(body):
             count = words(sentence)
             if count > MAX_WORDS:
                 errors.append(f"line {number}: sentence over 20 words ({count}): {sentence[:60]}…")
             for phrase in banned_in(sentence):
                 errors.append(f"line {number}: banned phrase '{phrase}': {sentence[:60]}…")
-        has_citation = bool(CITATION.search(body)) or bool(QUOTE.search(body))
         if section == SECTION_RECORDS and is_bullet:
             if not CITATION.search(body):
                 errors.append(f"line {number}: a record bullet needs a citation such as (E41233)")
             continue
-        if section == SECTION_GAPS and is_bullet:
-            if not re.search(r"\([^()]+\)\s*$", body):
-                errors.append(
-                    f"line {number}: a gap needs its search scope in parentheses: dates and terms"
-                )
-            continue
+        if section == SECTION_GAPS:
+            if is_bullet:
+                if not re.search(r"\([^()]+\)\s*$", body):
+                    gaps_without_scope.append(number)
+                continue
+            if SCOPE_SENTENCE.search(body):
+                gaps_scope = True
+                continue
         if section == SECTION_QUESTIONS and is_bullet:
             if not body.rstrip().endswith("?"):
                 errors.append(f"line {number}: a question must end with a question mark")
@@ -163,9 +208,10 @@ def check_draft(text: str) -> list[str]:
                 continue
             errors.append(
                 f"line {number}: a factual sentence without a citation (only questions, "
-                f"framing and proposals may go uncited): {sentence[:60]}…"
+                f"framing, proposals and your own account may go uncited): {sentence[:60]}…"
             )
-        del has_citation
+    if section == SECTION_GAPS:
+        close_gaps()
     return errors
 
 

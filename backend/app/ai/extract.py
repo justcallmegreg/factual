@@ -53,6 +53,7 @@ def count_pdf_pages(data: bytes) -> int | None:
 class ExtractedText:
     text: str
     model: str
+    truncated: bool = False  # the model stopped at max_tokens: the text is incomplete
 
 
 class Extractor(Protocol):
@@ -64,11 +65,20 @@ class Extractor(Protocol):
 
 
 class AnthropicExtractor:
-    def __init__(self, api_key: str, model: str, *, timeout: float = 120.0, max_tokens: int = 8000):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        timeout: float = 120.0,
+        max_tokens: int = 16000,
+        effort: str = "low",
+    ):
         import anthropic
 
         self.model = model
         self.max_tokens = max_tokens
+        self.effort = effort
         self.client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=1)
 
     @staticmethod
@@ -95,11 +105,16 @@ class AnthropicExtractor:
             model=self.model,
             max_tokens=self.max_tokens,
             messages=[{"role": "user", "content": self.build_content(media_type, data, file_name)}],
+            output_config={"effort": self.effort},
         )
         if response.stop_reason == "refusal":
             return ExtractedText(text="", model=self.model)
         text = "".join(block.text for block in response.content if block.type == "text")
-        return ExtractedText(text=text, model=response.model or self.model)
+        return ExtractedText(
+            text=text,
+            model=response.model or self.model,
+            truncated=response.stop_reason == "max_tokens",
+        )
 
 
 class ExtractionJob:
@@ -202,7 +217,8 @@ class ExtractionJob:
                 record_seq, blob_seq, file_name, mime, result.model, None, "no_text", pages
             )
             return
-        await self._store(record_seq, blob_seq, file_name, mime, result.model, text, "done", pages)
+        status = "truncated" if result.truncated else "done"
+        await self._store(record_seq, blob_seq, file_name, mime, result.model, text, status, pages)
         log.info(
             "derived text stored",
             extra=ctx(

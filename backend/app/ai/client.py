@@ -38,6 +38,7 @@ class ModelReply:
     content: list = field(default_factory=list)
     stop_reason: str = "end_turn"
     usage: dict = field(default_factory=dict)
+    raw: list[dict] | None = None  # every content block as the API returned it, for replay
 
 
 class ClaudeClient(Protocol):
@@ -51,6 +52,7 @@ class ClaudeClient(Protocol):
         tools: list[dict],
         output_schema: dict,
         max_tokens: int,
+        effort: str | None = None,
     ) -> ModelReply: ...
 
 
@@ -64,8 +66,13 @@ class AnthropicClaude:
         self._anthropic = anthropic
         self.client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=1)
 
-    async def complete(self, *, system, messages, tools, output_schema, max_tokens) -> ModelReply:
+    async def complete(
+        self, *, system, messages, tools, output_schema, max_tokens, effort=None
+    ) -> ModelReply:
         anthropic = self._anthropic
+        output_config: dict = {"format": {"type": "json_schema", "schema": output_schema}}
+        if effort:
+            output_config["effort"] = effort
         try:
             response = await self.client.messages.create(
                 model=self.model,
@@ -73,7 +80,7 @@ class AnthropicClaude:
                 system=system,
                 messages=messages,
                 tools=tools,
-                output_config={"format": {"type": "json_schema", "schema": output_schema}},
+                output_config=output_config,
             )
         except anthropic.RateLimitError as exc:
             raise ClaudeUnavailable(f"rate limited: {exc.message}") from exc
@@ -82,7 +89,10 @@ class AnthropicClaude:
         except anthropic.APIConnectionError as exc:  # includes timeouts
             raise ClaudeUnavailable(f"connection error: {type(exc).__name__}") from exc
         content: list = []
+        raw: list[dict] = []
         for block in response.content:
+            dump = getattr(block, "model_dump", None)
+            raw.append(dump(exclude_none=True, mode="json") if dump else dict(block))
             if block.type == "text":
                 content.append(TextBlock(block.text))
             elif block.type == "tool_use":
@@ -92,5 +102,5 @@ class AnthropicClaude:
             "output_tokens": getattr(response.usage, "output_tokens", None),
         }
         return ModelReply(
-            content=content, stop_reason=response.stop_reason or "end_turn", usage=usage
+            content=content, stop_reason=response.stop_reason or "end_turn", usage=usage, raw=raw
         )

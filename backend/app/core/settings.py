@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     s3_object_lock_days: int = 3650
     anthropic_api_key: str
     claude_model: str = "claude-sonnet-5-5"
+    claude_effort: Literal["low", "medium", "high"] = "low"
     ask_daily_limit: int = 200
     signing_key_file: Path
     master_key_file: Path
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
     def _upper_case_level(cls, value: object) -> object:
         return value.strip().upper() if isinstance(value, str) else value
 
-    @field_validator("audit_on_start", mode="before")
+    @field_validator("audit_on_start", "claude_effort", mode="before")
     @classmethod
     def _lower_case_mode(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value

@@ -76,7 +76,8 @@ class AskEngine:
         clock: Clock | None = None,
         timeout: float = 15.0,
         max_tool_calls: int = 6,
-        max_tokens: int = 2000,
+        max_tokens: int = 8000,
+        effort: str = "low",
     ) -> None:
         self.ledger = ledger
         self.db = db
@@ -89,6 +90,7 @@ class AskEngine:
         self.timeout = timeout
         self.max_tool_calls = max_tool_calls
         self.max_tokens = max_tokens
+        self.effort = effort
 
     # --- the public entry point used by /ask ------------------------------------------
 
@@ -127,9 +129,7 @@ class AskEngine:
         except TimeoutError:
             outcome = Outcome(None, "timeout", [], 0, True)
         except ClaudeUnavailable as exc:
-            log.warning(
-                "claude unavailable: %s", type(exc).__name__, extra=ctx(action="ask.unavailable")
-            )
+            log.warning("claude unavailable: %s", exc, extra=ctx(action="ask.unavailable"))
             outcome = Outcome(None, "unavailable", [], 0, True)
         text = await self._render(outcome, result, hits_text)
         await dispatcher.connector.send(event.chat, OutboundMessage(text, edit_of=shown))
@@ -190,9 +190,12 @@ class AskEngine:
                 tools=TOOLS,
                 output_schema=OUTPUT_SCHEMA,
                 max_tokens=self.max_tokens,
+                effort=self.effort,
             )
             if reply.stop_reason == "refusal":
                 return Outcome(None, "refused", [], tool_calls, True)
+            if reply.stop_reason == "max_tokens":
+                return Outcome(None, "cut_off", [], tool_calls, True)
             tool_uses = [b for b in reply.content if getattr(b, "type", "") == "tool_use"]
             if not tool_uses:
                 text = "".join(
@@ -209,7 +212,10 @@ class AskEngine:
                     return Outcome(None, "malformed", [], tool_calls, True)
                 return Outcome(verdict, None, rejected, tool_calls, True)
             messages.append(
-                {"role": "assistant", "content": [self._block_param(b) for b in reply.content]}
+                {
+                    "role": "assistant",
+                    "content": reply.raw or [self._block_param(b) for b in reply.content],
+                }
             )
             results = []
             for use in tool_uses:
@@ -268,6 +274,10 @@ class AskEngine:
             )
         if outcome.reason == "unavailable":
             return hits_text + "\n\n(Claude is unavailable; the records above are the answer.)"
+        if outcome.reason == "cut_off":
+            return (
+                hits_text + "\n\n(Claude's answer was cut off; the records above are the answer.)"
+            )
         if outcome.reason == "refused":
             return (
                 hits_text
@@ -294,7 +304,7 @@ class AskEngine:
             count = (
                 await conn.execute(
                     select(func.count()).where(
-                        qa_run.c.kind == "ask",
+                        qa_run.c.kind.in_(["ask", "respond"]),
                         qa_run.c.called_claude.is_(True),
                         qa_run.c.asked_at >= day_start,
                         qa_run.c.asked_at < day_start + timedelta(days=1),

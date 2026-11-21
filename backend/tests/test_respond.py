@@ -170,14 +170,13 @@ async def test_respond_as_a_reply_posts_a_brief_and_a_draft(chat):
 
 async def test_respond_with_pasted_text_treats_the_claim_as_input_not_evidence(chat):
     s = await kickoff_scene(chat)
-    claude = ScriptedClaude(
-        [reply({**good_brief(s), "claim": "You never confirmed the date."}, good_draft(s))]
-    )
+    claim = "You never confirmed the kickoff date of 12 February."  # finds the records Claude cites
+    claude = ScriptedClaude([reply({**good_brief(s), "claim": claim}, good_draft(s))])
     chat.commands.options["respond_engine"] = engine_for(chat, claude)
-    await chat.say("/respond You never confirmed the date.")
+    await chat.say("/respond " + claim)
     (request,) = claude.requests
     user_text = json.dumps(request["messages"][0]["content"])
-    assert "You never confirmed the date." in user_text
+    assert claim in user_text
     assert (
         "<claim>" in user_text
         and "input, not evidence" in request["system"].lower() + user_text.lower()

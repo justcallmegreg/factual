@@ -120,6 +120,7 @@ Factual is configured with environment variables only. `.env.example` lists ever
 | `S3_OBJECT_LOCK_DAYS` | `3650` | Retention for attachments; `0` switches Object Lock off |
 | `ANTHROPIC_API_KEY` | required | Key for the Claude API |
 | `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model for `/ask` and `/respond` |
+| `CLAUDE_EFFORT` | `low` | Effort for `/ask` verdicts and text extraction: `low`, `medium` or `high`; `/respond` uses at least `medium` |
 | `ASK_DAILY_LIMIT` | `200` | Questions per day |
 | `SIGNING_KEY_FILE` | required | Ed25519 key that signs the seals |
 | `MASTER_KEY_FILE` | required | Key that wraps the attachment keys |

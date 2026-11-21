@@ -158,7 +158,9 @@ def create_app(
                 db,
                 store,
                 master_key,
-                AnthropicExtractor(active.anthropic_api_key, active.claude_model),
+                AnthropicExtractor(
+                    active.anthropic_api_key, active.claude_model, effort=active.claude_effort
+                ),
             )
             intake = AttachmentIntake(max_bytes=connector.capabilities.max_file_bytes)
             app.state.sink = sink = Ingestion(
@@ -263,6 +265,8 @@ def create_app(
                 model=active.claude_model,
                 timezone=active.timezone,
                 verifier=verifier,
+                effort="medium" if active.claude_effort == "low" else active.claude_effort,
+                daily_limit=active.ask_daily_limit,
             )
             commands.options["ask_engine"] = AskEngine(
                 app.state.ledger,
@@ -272,6 +276,7 @@ def create_app(
                 daily_limit=active.ask_daily_limit,
                 timezone=active.timezone,
                 verifier=verifier,
+                effort=active.claude_effort,
             )
             app.state.pack_builder = commands.options["pack_builder"] = PackBuilder(
                 db,

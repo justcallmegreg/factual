@@ -78,3 +78,22 @@ Write in English. Use the principles of Simplified Technical English. See refere
 
 Use references/output-template.md. Give the BRIEF first, then the DRAFT.
 The user edits the draft and sends it.
+
+## In Thoth
+
+Thoth gives you the matching records and the tools, inserts every [[quote:N]] from
+the ledger and runs scripts/check_draft.py on your draft. When the draft fails, you
+get the errors once and answer again with the full brief and draft.
+
+## In Claude Code
+
+The ledger is reachable through Factual's read-only HTTP API. Set the base address
+and the token (`API_TOKEN` of the backend) and send `Authorization: Bearer <token>`:
+
+- `GET /api/v1/search?q=<words>` finds records and gives their entry numbers.
+- `GET /api/v1/records/<seq>` gives one record: text, origin, versions, integrity status.
+
+Fetch each record you cite and paste its exact text where the template has
+[[quote:N]]; do not type a quote from memory. Save the draft to a file and run
+`python3 -I -S scripts/check_draft.py draft.txt`; correct every error before you
+deliver the brief and the draft.
