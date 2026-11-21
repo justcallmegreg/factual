@@ -162,9 +162,9 @@ As a developer, I want every change checked automatically, so that broken code o
 
 **Tasks**
 
-- [ ] Choose the CI service that belongs to the code host.
-- [ ] Add the pipeline with the four steps and a dependency cache.
-- [ ] Add the status badge to the root README.
+- [x] Choose the CI service that belongs to the code host.
+- [x] Add the pipeline with the four steps and a dependency cache.
+- [x] Add the status badge to the root README.
 
 ### FAC-07 · Database and migrations
 

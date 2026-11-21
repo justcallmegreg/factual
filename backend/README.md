@@ -118,6 +118,10 @@ make lint     # ruff check .
 
 The tests that touch the database need a PostgreSQL server; `make up` provides one. Tests marked `docker` build and run the container image; they are skipped when no Docker daemon answers, and `pytest -m "not docker"` leaves them out on purpose.
 
+## Continuous integration
+
+GitHub Actions runs `.github/workflows/ci.yml`. Every push runs `make lint`, `make test` (with a PostgreSQL 17 service container) and `make swagger-check`; a push to `main` also runs `make build` for both architectures. Dependencies are cached between runs. To make a failed step block a merge, require the `check` job as a status check in the branch protection rules of `main`.
+
 ## Migrations
 
 The schema is under Alembic control in `migrations/`. The backend applies the migrations at start. Evidence tables are insert-only: the runtime database role can insert and read but never update or delete, and a trigger rejects both.

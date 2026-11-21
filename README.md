@@ -1,5 +1,7 @@
 # Factual
 
+[![CI](https://github.com/justcallmegreg/factual/actions/workflows/ci.yml/badge.svg)](https://github.com/justcallmegreg/factual/actions/workflows/ci.yml)
+
 Factual turns what you send to one Telegram chat into tamper-evident evidence and finds it again when you ask. Its bot, **Thoth**, records every message and attachment in an append-only, hash-chained ledger, seals the ledger every 5 minutes with an Ed25519 signature and RFC 3161 trusted timestamps, and files each record under a project that you pick with one tap.
 
 | What you do | What Factual does |
