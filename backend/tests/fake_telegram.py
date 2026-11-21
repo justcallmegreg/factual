@@ -20,6 +20,7 @@ class FakeTelegramApi:
     offsets: list[int | None] = field(default_factory=list)
     next_message_id: int = 9000
     fail_reactions: int = 0  # how many set_message_reaction calls fail first
+    retry_after_seconds: float = 0.02
     stop_when_empty: bool = True
 
     async def get_updates(
@@ -75,7 +76,7 @@ class FakeTelegramApi:
         )
         if self.fail_reactions:
             self.fail_reactions -= 1
-            raise RetryAfterError(retry_after=1)
+            raise RetryAfterError(retry_after=self.retry_after_seconds)
 
     async def leave_chat(self, chat_id) -> None:
         self.calls.append(("leave_chat", {"chat_id": chat_id}))
@@ -99,6 +100,6 @@ class FakeTelegramApi:
 
 
 class RetryAfterError(Exception):
-    def __init__(self, retry_after: int) -> None:
+    def __init__(self, retry_after: float) -> None:
         super().__init__(f"Flood control: retry after {retry_after}")
         self.retry_after = retry_after

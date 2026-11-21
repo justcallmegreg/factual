@@ -251,8 +251,8 @@ As a member, I want a ✍ on every message that was recorded, so that a missing 
 
 **Tasks**
 
-- [ ] Implement `acknowledge()` in the connector with a retry queue.
-- [ ] Test the commit-then-mark order and the backlog case.
+- [x] Implement `acknowledge()` in the connector with a retry queue.
+- [x] Test the commit-then-mark order and the backlog case.
 - [ ] Run the notification and rate-limit test in a real group and record the result in the README.
 
 ### FAC-12 · Projects

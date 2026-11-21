@@ -29,6 +29,17 @@ Telegram sits behind the connector interface in `app/connectors/base.py`; the co
 
 Every connector passes the contract tests in `tests/test_connector_contract.py`, which replay recorded updates: a new message, an edit, an attachment, a duplicate delivery, a button tap, and the rule that the acknowledgement follows the commit. The Telegram fixtures in `tests/fixtures/telegram/` were built from the Bot API reference while no bot token was available; replace them with recordings from the real capture chat when you have one.
 
+### Acknowledgement
+
+Thoth marks every message it records with the reaction from `ACK_REACTION` (default ✍), set only after the ledger transaction has committed: a message without the mark was not recorded. When Telegram answers a reaction with a rate limit (HTTP 429, `retry_after`), the mark is queued and set after the requested delay; any other failure is retried with a growing delay, and after six attempts the mark is given up with an `ack.failed` error line, so the missing mark stays visible as the signal. After downtime, the first poll returns the backlog Telegram kept (up to 24 hours): Thoth records every message in order, marks each one late, and logs a `backlog` line with the count.
+
+The real-group test from the specification (does every mark notify the members, and does a busy chat hit Telegram's rate limits?) has **not been run yet**: no bot token was available while this was built. Run it in the capture chat and write the result here:
+
+| Question | Result |
+| --- | --- |
+| Do members get a notification for each ✍ mark? | not yet observed |
+| Does a busy chat (20 messages in a minute) hit rate limits, and does the queue recover? | not yet observed |
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

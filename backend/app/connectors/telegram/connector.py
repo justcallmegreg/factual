@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from functools import partial
@@ -26,6 +27,68 @@ log = logging.getLogger("factual.telegram")
 
 PRIVATE_REPLY = "Thoth works only in its capture chat."
 MAX_BACKOFF = 60.0
+BACKLOG_AGE_SECONDS = 60  # a first poll with older messages means Thoth was down
+
+
+class AckQueue:
+    """Sets the ✍ mark; a failed attempt is retried later instead of lost.
+
+    A rate limit (an error with `retry_after`) delays the mark by what Telegram
+    asks; any other failure retries after `retry_delay`. After `max_attempts`
+    the mark is given up with an error line: a missing mark is the outage signal.
+    """
+
+    def __init__(self, api: TelegramApi, emoji: str, *, retry_delay: float, max_attempts: int = 6):
+        self.api = api
+        self.emoji = emoji
+        self.retry_delay = retry_delay
+        self.max_attempts = max_attempts
+        self._tasks: set[asyncio.Task[None]] = set()
+
+    @property
+    def pending(self) -> int:
+        return len(self._tasks)
+
+    async def acknowledge(self, ref: MessageRef) -> None:
+        await self._attempt(ref, attempt=1)
+
+    async def _attempt(self, ref: MessageRef, attempt: int) -> None:
+        try:
+            await self.api.set_message_reaction(ref.chat.chat_id, ref.message_id, self.emoji)
+        except Exception as exc:  # noqa: BLE001 — every failure is retried or reported
+            delay = getattr(exc, "retry_after", None)
+            delay = float(delay) if delay else self.retry_delay * attempt
+            if attempt >= self.max_attempts:
+                log.error(
+                    "mark given up after %d attempts: %s",
+                    attempt,
+                    type(exc).__name__,
+                    extra=ctx(action="ack.failed", message_id=ref.message_id, attempt=attempt),
+                )
+                return
+            log.warning(
+                "mark delayed: %s",
+                type(exc).__name__,
+                extra=ctx(
+                    action="ack.delayed",
+                    message_id=ref.message_id,
+                    attempt=attempt,
+                    retry_in_s=delay,
+                ),
+            )
+            task = asyncio.create_task(self._later(ref, attempt + 1, delay))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+    async def _later(self, ref: MessageRef, attempt: int, delay: float) -> None:
+        await asyncio.sleep(delay)
+        await self._attempt(ref, attempt)
+
+    async def drain(self, seconds: float) -> None:
+        """Wait for queued marks (used at shutdown and in tests)."""
+        deadline = time.monotonic() + seconds
+        while self._tasks and time.monotonic() < deadline:
+            await asyncio.wait(list(self._tasks), timeout=max(0.0, deadline - time.monotonic()))
 
 
 @dataclass(frozen=True)
@@ -68,8 +131,10 @@ class TelegramConnector:
         self._offset: int | None = None
         self._stopping = False
         self._failures = 0
+        self._polls = 0
         self._told_unconfigured: set[int | str] = set()
         self._left: set[int | str] = set()
+        self.acks = AckQueue(api, settings.ack_reaction, retry_delay=max(retry_delay, 0.01))
 
     # --- polling -----------------------------------------------------------------------
 
@@ -84,6 +149,7 @@ class TelegramConnector:
 
     async def stop(self) -> None:
         self._stopping = True
+        await self.acks.drain(5)
 
     async def _learn_identity(self) -> None:
         try:
@@ -103,6 +169,9 @@ class TelegramConnector:
             await self._backoff("getUpdates failed", exc)
             return 0
         self._failures = 0
+        self._polls += 1
+        if self._polls == 1:
+            self._note_backlog(updates)
         handled = 0
         for raw in updates:
             try:
@@ -115,6 +184,20 @@ class TelegramConnector:
             self._offset = raw["update_id"] + 1
             handled += 1
         return handled
+
+    @staticmethod
+    def _note_backlog(updates: list[dict]) -> None:
+        """Log when the first poll after a start returns messages that waited for Thoth."""
+        dates = [
+            (raw.get("message") or raw.get("edited_message") or {}).get("date") for raw in updates
+        ]
+        dates = [d for d in dates if isinstance(d, int)]
+        if dates and time.time() - min(dates) > BACKLOG_AGE_SECONDS:
+            log.info(
+                "recording a backlog of %d updates that arrived while Thoth was down",
+                len(updates),
+                extra=ctx(action="backlog", count=len(updates)),
+            )
 
     async def _backoff(self, what: str, exc: Exception, update_id: int | None = None) -> None:
         self._failures += 1
@@ -164,9 +247,8 @@ class TelegramConnector:
     # --- outbound ------------------------------------------------------------------------
 
     async def acknowledge(self, ref: MessageRef) -> None:
-        await self.api.set_message_reaction(
-            ref.chat.chat_id, ref.message_id, self.settings.ack_reaction
-        )
+        """Set the mark; never raises. A failure is queued for a retry."""
+        await self.acks.acknowledge(ref)
 
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef:
         buttons = [[(b.label, b.data) for b in row] for row in msg.buttons] or None
