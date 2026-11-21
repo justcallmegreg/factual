@@ -24,7 +24,11 @@ async def resolve_seq(dispatcher: CommandDispatcher, event: SourceEvent) -> int 
     args = (event.command.args if event.command else "").strip()
     if args:
         match = NUMBER.match(args)
-        return int(match.group(1)) if match else USAGE
+        if not match:
+            return USAGE
+        if len(match.group(1)) > 18:
+            return f"No such entry E{match.group(1)}."
+        return int(match.group(1))
     reply_to = event.normalized.reply_to if event.normalized else None
     if reply_to is None:
         return USAGE

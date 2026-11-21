@@ -30,6 +30,9 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
         if not match:
             await dispatcher.reply(event, USAGE)
             return
+        if len(match.group(1)) > 18:
+            await dispatcher.reply(event, f"E{match.group(1)} is not a recorded entry.")
+            return
         seqs.append(int(match.group(1)))
     if not seqs:
         reply_to = event.normalized.reply_to if event.normalized else None

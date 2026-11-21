@@ -321,6 +321,8 @@ async def records(
     summary="One record with its versions and filing history",
 )
 async def record_detail(request: Request, seq: int) -> RecordDetail:
+    if seq < 1 or seq > 2**62:
+        raise HTTPException(status_code=404, detail=f"No record E{seq}.")
     verifier = _verifier(request)
     async with request.app.state.db.engine.connect() as conn:
         row = (await conn.execute(select(record).where(record.c.seq == seq))).first()

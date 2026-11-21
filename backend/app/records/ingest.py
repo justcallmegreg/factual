@@ -9,7 +9,7 @@ still re-sets the mark.
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -21,7 +21,7 @@ from app.core.logging import ctx
 from app.ledger.ledger import Ledger, iso_seconds
 from app.records.normalize import hashtags, stated_time
 from app.storage.db import Database
-from app.storage.models import record, record_version, search_chunk
+from app.storage.models import attachment, record, record_version, search_chunk
 
 log = logging.getLogger("factual.ingest")
 
@@ -308,10 +308,18 @@ class Ingestion:
         await event.ack()
         await self._send_notices(notices)
         if self.filing is not None and not appended.duplicate and auto is None:
-            await self.filing.offer_picker(event, appended.seq)
+            try:
+                await self.filing.offer_picker(event, appended.seq)
+            except Exception as exc:  # noqa: BLE001 — the record is safe; /log pending recovers
+                log.error(
+                    "picker not offered: %s",
+                    type(exc).__name__,
+                    extra=ctx(action="picker.failed", entry=appended.seq),
+                )
 
     async def _edit(self, event: SourceEvent) -> None:
         n = event.normalized or NormalizedMessage()
+        notices: list = []
         async with self.db.engine.begin() as conn:
             row = (
                 await conn.execute(
@@ -325,7 +333,18 @@ class Ingestion:
                 known = False
             else:
                 known = True
-                if (n.text, n.caption) == (row.text, row.caption):
+                stored_ids = {
+                    str(u)
+                    for (u,) in (
+                        await conn.execute(
+                            select(attachment.c.file_unique_id).where(
+                                attachment.c.record_seq == row.seq
+                            )
+                        )
+                    ).all()
+                }
+                new_blobs = tuple(b for b in event.blobs if b.unique_id not in stored_ids)
+                if (n.text, n.caption) == (row.text, row.caption) and not new_blobs:
                     log.debug(
                         "edit without a change ignored",
                         extra=ctx(entry=int(row.seq), message_id=event.message.message_id),
@@ -348,6 +367,7 @@ class Ingestion:
                             "tags": tags,
                             "stated_at": stated.isoformat() if stated else None,
                             "edited_at": iso_seconds(event.occurred_at),
+                            "media_kinds": list(n.media_kinds),
                         },
                     },
                     refs=[int(row.seq)],
@@ -374,10 +394,15 @@ class Ingestion:
                             caption=n.caption,
                             tags=tags,
                             stated_at=stated,
+                            media_kinds=list(n.media_kinds),
                             version=int(row.version) + 1,
                             edited_at=event.occurred_at,
                         )
                     )
+                    if new_blobs and self.attachments is not None:
+                        notices = await self.attachments.register(
+                            conn, self.ledger, replace(event, blobs=new_blobs), int(row.seq)
+                        )
         if not known:
             # the first version was never recorded (sent before Thoth joined, or lost)
             await self._record(event)
@@ -389,3 +414,4 @@ class Ingestion:
             ),
         )
         await event.ack()
+        await self._send_notices(notices)

@@ -113,7 +113,7 @@ def test_a_button_tap_becomes_a_choice_event():
     [
         ("message_private", "private"),
         ("message_other_group", "other_chat"),
-        ("my_chat_member_added", "other_chat"),
+        ("my_chat_member_added", "joined_other_chat"),
         ("message_from_bot", "from_bot"),
         ("message_service", "service"),
     ],

@@ -139,6 +139,7 @@ class Filing:
     async def offer_picker(self, event: SourceEvent, record_seq: int) -> None:
         """After a record: edit the sender's picker of the last 10 seconds, or send a new one."""
         now = self.clock()
+        when = event.occurred_at  # the record's own time: a backlog does not merge hours into one
         chat = event.chat
         user_id = event.actor.user_id if event.actor else None
         async with self.db.engine.begin() as conn:
@@ -150,7 +151,7 @@ class Filing:
                         picker.c.user_id == user_id,
                         picker.c.filed_project.is_(None),
                         picker.c.message_id.is_not(None),
-                        picker.c.last_record_at >= now - timedelta(seconds=PICKER_SHARE_SECONDS),
+                        picker.c.last_record_at >= when - timedelta(seconds=PICKER_SHARE_SECONDS),
                     )
                     .order_by(picker.c.id.desc())
                     .limit(1)
@@ -161,7 +162,7 @@ class Filing:
                 await conn.execute(
                     update(picker)
                     .where(picker.c.id == shared.id)
-                    .values(record_seqs=seqs, last_record_at=now, page=0)
+                    .values(record_seqs=seqs, last_record_at=when, page=0)
                 )
                 text = await self._picker_text(conn, seqs)
                 buttons = await self._project_buttons(conn, "p", int(shared.id), 0)
@@ -174,7 +175,7 @@ class Filing:
                         user_id=user_id,
                         record_seqs=[record_seq],
                         created_at=now,
-                        last_record_at=now,
+                        last_record_at=when,
                     )
                     .returning(picker.c.id)
                 )

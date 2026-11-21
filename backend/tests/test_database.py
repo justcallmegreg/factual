@@ -208,4 +208,4 @@ def test_readyz_reports_the_database_state(db_settings):
         app.state.db = Broken()
         down = client.get("/readyz")
         assert down.status_code == 503
-        assert down.json() == {"status": "not ready", "database": "connection refused"}
+        assert down.json() == {"status": "not ready", "database": "unavailable"}

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
+from app.core.logging import ctx
+
 router = APIRouter(tags=["health"])
+log = logging.getLogger("factual.api")
 
 
 class Health(BaseModel):
@@ -41,6 +46,7 @@ async def readyz(request: Request, response: Response) -> Readiness:
     db = getattr(request.app.state, "db", None)
     problem = await db.check() if db is not None else "database not started"
     if problem:
+        log.warning("readiness check failed: %s", problem, extra=ctx(action="readyz.failed"))
         response.status_code = 503
-        return Readiness(status="not ready", database=problem)
+        return Readiness(status="not ready", database="unavailable")
     return Readiness(status="ready", database="ok")

@@ -22,6 +22,12 @@ class FakeTelegramApi:
     fail_reactions: int = 0  # how many set_message_reaction calls fail first
     retry_after_seconds: float = 0.02
     stop_when_empty: bool = True
+    failures: dict[str, list[Exception]] = field(default_factory=dict)  # method → errors to raise
+
+    def _fail(self, method: str) -> None:
+        queue = self.failures.get(method)
+        if queue:
+            raise queue.pop(0)
 
     async def get_updates(
         self, offset: int | None, poll_timeout: int, allowed_updates: list[str]
@@ -42,6 +48,7 @@ class FakeTelegramApi:
         return {"id": 7000000001, "username": "FactualThothBot"}
 
     async def send_message(self, chat_id, text, reply_to_message_id=None, buttons=None) -> dict:
+        self._fail("send_message")
         self.calls.append(
             (
                 "send_message",
@@ -57,6 +64,7 @@ class FakeTelegramApi:
         return {"message_id": self.next_message_id, "chat": {"id": chat_id}}
 
     async def edit_message_text(self, chat_id, message_id, text, buttons=None) -> dict:
+        self._fail("edit_message_text")
         self.calls.append(
             (
                 "edit_message_text",
@@ -66,6 +74,7 @@ class FakeTelegramApi:
         return {"message_id": message_id, "chat": {"id": chat_id}}
 
     async def answer_callback_query(self, callback_query_id, text=None) -> None:
+        self._fail("answer_callback_query")
         self.calls.append(
             ("answer_callback_query", {"callback_query_id": callback_query_id, "text": text})
         )
@@ -79,6 +88,7 @@ class FakeTelegramApi:
             raise RetryAfterError(retry_after=self.retry_after_seconds)
 
     async def leave_chat(self, chat_id) -> None:
+        self._fail("leave_chat")
         self.calls.append(("leave_chat", {"chat_id": chat_id}))
 
     async def set_my_commands(self, commands) -> None:
@@ -88,6 +98,7 @@ class FakeTelegramApi:
         self.calls.append(("delete_message", {"chat_id": chat_id, "message_id": message_id}))
 
     async def send_document(self, chat_id, filename, data, caption, reply_to_message_id) -> dict:
+        self._fail("send_document")
         self.calls.append(
             (
                 "send_document",

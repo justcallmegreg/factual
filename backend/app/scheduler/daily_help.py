@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, insert, select
@@ -43,7 +43,7 @@ class DailyHelp:
         *,
         timezone: str,
         at: str = "06:00",
-        until: str = "09:00",
+        until: str | None = None,  # three hours after `at` unless given
         clock: Clock | None = None,
         last_audit: StatusExtra | None = None,
     ) -> None:
@@ -52,7 +52,7 @@ class DailyHelp:
         self.chat = chat
         self.zone = ZoneInfo(timezone)
         self.at = _parse_hhmm(at)
-        self.until = _parse_hhmm(until)
+        self.until = _parse_hhmm(until) if until else None
         self.clock = clock or system_clock
         self.last_audit = last_audit
 
@@ -60,7 +60,10 @@ class DailyHelp:
         """The day's 06:00 (as an instant) when `now` lies between 06:00 and 09:00 local time."""
         local = now.astimezone(self.zone)
         start = local.replace(hour=self.at[0], minute=self.at[1], second=0, microsecond=0)
-        end = local.replace(hour=self.until[0], minute=self.until[1], second=0, microsecond=0)
+        if self.until is not None:
+            end = local.replace(hour=self.until[0], minute=self.until[1], second=0, microsecond=0)
+        else:
+            end = start + timedelta(hours=3)
         if start <= local < end:
             return start.astimezone(UTC)
         return None

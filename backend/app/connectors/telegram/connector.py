@@ -19,6 +19,7 @@ from app.connectors.base import (
     OutboundFile,
     OutboundMessage,
     SentRef,
+    SourceEvent,
 )
 from app.connectors.telegram.api import TelegramApi
 from app.connectors.telegram.mapping import Ignored, map_update
@@ -29,6 +30,7 @@ log = logging.getLogger("factual.telegram")
 PRIVATE_REPLY = "Thoth works only in its capture chat."
 MAX_BACKOFF = 60.0
 BACKLOG_AGE_SECONDS = 60  # a first poll with older messages means Thoth was down
+STUCK_AFTER = 5  # failures of one record update before the chat is told that capture is paused
 
 
 class AckQueue:
@@ -135,6 +137,7 @@ class TelegramConnector:
         self._polls = 0
         self._told_unconfigured: set[int | str] = set()
         self._left: set[int | str] = set()
+        self._stuck: tuple[int | None, int] = (None, 0)  # (update id, consecutive failures)
         self.acks = AckQueue(api, settings.ack_reaction, retry_delay=max(retry_delay, 0.01))
         self.commands_menu: list[tuple[str, str]] = []  # published with setMyCommands at start
         self.last_poll_at: float | None = None
@@ -188,14 +191,43 @@ class TelegramConnector:
         for raw in updates:
             try:
                 await self._handle(raw, sink)
-            except Exception as exc:  # noqa: BLE001 — the update stays undelivered and comes back
+            except Exception as exc:  # noqa: BLE001 — evidence stays undelivered and comes back
+                await self._stuck_on(raw, exc)
                 await self._backoff(
                     "handling an update failed", exc, update_id=raw.get("update_id")
                 )
                 return handled
+            self._stuck = (None, 0)
             self._offset = raw["update_id"] + 1
             handled += 1
         return handled
+
+    async def _stuck_on(self, raw: dict, exc: Exception) -> None:
+        """One record failing again and again halts capture: say so once, loudly."""
+        update_id = raw.get("update_id")
+        count = self._stuck[1] + 1 if self._stuck[0] == update_id else 1
+        self._stuck = (update_id, count)
+        if count != STUCK_AFTER:
+            return
+        message_id = (raw.get("message") or raw.get("edited_message") or {}).get("message_id")
+        log.critical(
+            "update failed %d times (%s): capture is paused until it is fixed",
+            count,
+            type(exc).__name__,
+            extra=ctx(action="telegram.stuck", update_id=update_id, attempt=count),
+        )
+        if self.settings.capture_chat_id is None:
+            return
+        try:
+            await self.api.send_message(
+                self.settings.capture_chat_id,
+                f"Thoth cannot record message {message_id} in this chat: {type(exc).__name__} "
+                f"after {count} attempts. Nothing after it is recorded until this is fixed; "
+                "the log has the details.",
+                reply_to_message_id=message_id,
+            )
+        except Exception as notify_exc:  # noqa: BLE001
+            log.error("could not post the capture problem: %s", type(notify_exc).__name__)
 
     @staticmethod
     def _note_backlog(updates: list[dict]) -> None:
@@ -221,16 +253,58 @@ class TelegramConnector:
         await asyncio.sleep(delay)
 
     async def _handle(self, raw: dict, sink: EventSink) -> None:
+        """Evidence (a new or edited message) may hold the offset while it fails; a command,
+        a tap or an ignored update is answered or logged and never retried."""
         outcome = map_update(
             raw,
             capture_chat_id=self.settings.capture_chat_id,
             bot_username=self.settings.bot_username,
         )
         if isinstance(outcome, Ignored):
-            await self._react_to_ignored(outcome)
+            try:
+                await self._react_to_ignored(outcome)
+            except Exception as exc:  # noqa: BLE001 — an ignored update never blocks the offset
+                log.warning(
+                    "reaction to an ignored update failed: %s",
+                    type(exc).__name__,
+                    extra=ctx(update_id=outcome.update_id, reason=outcome.reason),
+                )
             return
         ack = partial(self.acknowledge, outcome.message) if outcome.kind != "choice" else _noop
+        if outcome.kind in ("command", "choice"):
+            try:
+                await sink.handle(replace(outcome, ack=ack))
+            except Exception as exc:  # noqa: BLE001 — answered and logged, not retried
+                log.error(
+                    "%s failed: %s",
+                    outcome.kind,
+                    type(exc).__name__,
+                    extra=ctx(
+                        action="command.failed",
+                        update_id=raw.get("update_id"),
+                        chat_id=outcome.chat.chat_id,
+                    ),
+                )
+                await self._apologize(outcome, exc)
+            return
         await sink.handle(replace(outcome, ack=ack))
+
+    async def _apologize(self, event: SourceEvent, exc: Exception) -> None:
+        try:
+            if event.kind == "choice" and event.choice is not None:
+                await self.api.answer_callback_query(
+                    event.choice.query_id,
+                    f"Thoth could not handle that tap ({type(exc).__name__}); it is logged.",
+                )
+            elif event.message is not None:
+                await self.api.send_message(
+                    event.chat.chat_id,
+                    f"Thoth could not run that command ({type(exc).__name__}); it is logged. "
+                    "Nothing was recorded.",
+                    reply_to_message_id=event.message.message_id,
+                )
+        except Exception as send_exc:  # noqa: BLE001
+            log.warning("could not report a failed %s: %s", event.kind, type(send_exc).__name__)
 
     async def _react_to_ignored(self, ignored: Ignored) -> None:
         chat = ignored.chat
@@ -242,6 +316,23 @@ class TelegramConnector:
                     f"This group's chat ID is {chat.chat_id}. Set TELEGRAM_CAPTURE_CHAT_ID to it "
                     "and restart Thoth; until then nothing is recorded.",
                 )
+        elif ignored.reason == "migrated" and chat is not None:
+            if chat.chat_id not in self._told_unconfigured:
+                self._told_unconfigured.add(chat.chat_id)
+                log.critical(
+                    "the capture chat moved to another chat id; set TELEGRAM_CAPTURE_CHAT_ID",
+                    extra=ctx(action="telegram.migrated", chat_id=chat.chat_id),
+                )
+                await self.api.send_message(
+                    chat.chat_id,
+                    f"This group moved to chat ID {chat.chat_id}. Set TELEGRAM_CAPTURE_CHAT_ID "
+                    "to it and restart Thoth; until then nothing is recorded.",
+                )
+        elif ignored.reason == "joined_other_chat" and chat is not None:
+            log.info(
+                "added to a chat that is not the capture chat; left when it writes",
+                extra=ctx(chat_id=chat.chat_id),
+            )
         elif ignored.reason == "other_chat" and chat is not None:
             if chat.chat_id not in self._left:
                 self._left.add(chat.chat_id)
@@ -273,29 +364,69 @@ class TelegramConnector:
     async def send(self, chat: ChatRef, msg: OutboundMessage) -> SentRef:
         buttons = [[(b.label, b.data) for b in row] for row in msg.buttons] or None
         if msg.answer_choice:
-            await self.api.answer_callback_query(msg.answer_choice, msg.answer_text)
+            try:
+                await self.api.answer_callback_query(msg.answer_choice, msg.answer_text)
+            except Exception as exc:  # noqa: BLE001 — a tap from before a restart is too old
+                log.info("tap not answered: %s", type(exc).__name__)
         if not msg.text and msg.edit_of is None:
             return SentRef(MessageRef(chat, 0))  # only the tap was answered
         if msg.edit_of is not None:
-            result = await self.api.edit_message_text(
-                chat.chat_id, msg.edit_of.message_id, msg.text, buttons
-            )
+            try:
+                result = await self._with_retry(
+                    partial(
+                        self.api.edit_message_text,
+                        chat.chat_id,
+                        msg.edit_of.message_id,
+                        msg.text,
+                        buttons,
+                    )
+                )
+            except Exception as exc:
+                if "not modified" in str(exc).lower():
+                    return SentRef(msg.edit_of)  # the same text and buttons are already there
+                raise
         else:
-            result = await self.api.send_message(
-                chat.chat_id,
-                msg.text,
-                reply_to_message_id=msg.reply_to.message_id if msg.reply_to else None,
-                buttons=buttons,
+            result = await self._with_retry(
+                partial(
+                    self.api.send_message,
+                    chat.chat_id,
+                    msg.text,
+                    reply_to_message_id=msg.reply_to.message_id if msg.reply_to else None,
+                    buttons=buttons,
+                )
             )
         return SentRef(MessageRef(chat, result["message_id"]))
 
+    async def _with_retry(self, call, attempts: int = 3):
+        """Telegram's flood control: wait what it asks and try again, a few times."""
+        for attempt in range(1, attempts + 1):
+            try:
+                return await call()
+            except Exception as exc:
+                retry_after = getattr(exc, "retry_after", None)
+                if not retry_after or attempt == attempts:
+                    raise
+                log.warning(
+                    "rate limited, waiting",
+                    extra=ctx(
+                        action="telegram.rate_limited",
+                        attempt=attempt,
+                        retry_in_s=float(retry_after),
+                    ),
+                )
+                await asyncio.sleep(float(retry_after))
+        raise RuntimeError("unreachable")
+
     async def send_file(self, chat: ChatRef, file: OutboundFile) -> SentRef:
-        result = await self.api.send_document(
-            chat.chat_id,
-            file.filename,
-            file.data,
-            file.caption,
-            file.reply_to.message_id if file.reply_to else None,
+        result = await self._with_retry(
+            partial(
+                self.api.send_document,
+                chat.chat_id,
+                file.filename,
+                file.data,
+                file.caption,
+                file.reply_to.message_id if file.reply_to else None,
+            )
         )
         return SentRef(MessageRef(chat, result["message_id"]))
 

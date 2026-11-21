@@ -170,8 +170,10 @@ def map_update(
         chat = chat_ref(raw["my_chat_member"]["chat"])
         if chat.kind == "private":
             return Ignored("private", chat, update_id)
-        if capture_chat_id is None or chat.chat_id != capture_chat_id:
-            return Ignored("other_chat", chat, update_id)
+        if capture_chat_id is None:
+            return Ignored("unconfigured", chat, update_id)  # the ID is reported, nothing is left
+        if chat.chat_id != capture_chat_id:
+            return Ignored("joined_other_chat", chat, update_id)  # left on its first message
         return Ignored("service", chat, update_id)
 
     callback = raw.get("callback_query")
@@ -185,6 +187,12 @@ def map_update(
         return Ignored("private", chat, update_id)
     if capture_chat_id is None:
         return Ignored("unconfigured", chat, update_id)
+    # a basic group that became a supergroup has a new id: never leave it, report the move
+    if msg.get("migrate_from_chat_id") == capture_chat_id:
+        return Ignored("migrated", chat, update_id)
+    if chat.chat_id == capture_chat_id and msg.get("migrate_to_chat_id"):
+        moved = {"id": msg["migrate_to_chat_id"], "type": "supergroup", "title": chat.title}
+        return Ignored("migrated", chat_ref(moved), update_id)
     if chat.chat_id != capture_chat_id:
         return Ignored("other_chat", chat, update_id)
 

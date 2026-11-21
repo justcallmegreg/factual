@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import unquote, urlsplit
 
 from pydantic import ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -15,6 +16,17 @@ MIN_SECRET_LENGTH = 8
 
 class ConfigurationError(RuntimeError):
     """The service cannot start: a required variable is missing or invalid."""
+
+
+def _password_of(url: str | None) -> str | None:
+    """The password inside a URL such as postgresql://user:secret@host/db, if any."""
+    if not url:
+        return None
+    try:
+        password = urlsplit(url).password
+    except ValueError:
+        return None
+    return unquote(password) if password else None
 
 
 class Settings(BaseSettings):
@@ -108,12 +120,14 @@ class Settings(BaseSettings):
         characters are left out: redacting a short, common word would blank out
         ordinary text in every line.
         """
-        candidates = (
+        candidates = [
             self.telegram_bot_token,
             self.anthropic_api_key,
             self.s3_secret_access_key,
             self.api_token,
-        )
+            _password_of(self.database_url),
+            _password_of(self.qualified_tsa_url),
+        ]
         return [value for value in candidates if value and len(value) >= MIN_SECRET_LENGTH]
 
     @classmethod
