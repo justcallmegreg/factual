@@ -80,6 +80,10 @@ After `/ask` posts the hits, Claude (`CLAUDE_MODEL`, default `claude-sonnet-5-5`
 
 Record text is untrusted: it reaches Claude as data, the tools are read-only (an unknown tool name gets an error result), and the output is schema-checked. The tests drive these guardrails with hostile record text and a scripted Claude; a live test runs when `ANTHROPIC_API_KEY` is set.
 
+### Daily help
+
+At `DAILY_HELP_TIME` (default 06:00) in `TIMEZONE`, Thoth posts the command list and a status line (records without a project, the time of the last seal, the result of the last audit) in the capture chat and deletes the previous day's message. Each run is a row in `schedule_run`, keyed by the day's 06:00 instant, so a restart never sends twice; after an outage the message is still sent until 09:00, then the day is skipped. Daylight-saving changes are handled by the time zone (06:00 local in winter and summer). If no message arrives by 09:00, Thoth is down or was down that morning.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

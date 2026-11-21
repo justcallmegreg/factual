@@ -28,6 +28,7 @@ class NullConnector:
         self.acknowledged: list[MessageRef] = []
         self.files: dict[str, bytes] = {}  # file_id → bytes that fetch_blob streams
         self.files_sent: list[OutboundFile] = []
+        self.deleted: list[MessageRef] = []
         self._next_id = 0
         self._stopped = asyncio.Event()
 
@@ -59,6 +60,9 @@ class NullConnector:
         self._next_id += 1
         self.message_ids.append(self._next_id)
         return SentRef(MessageRef(chat, self._next_id))
+
+    async def delete_message(self, ref: MessageRef) -> None:
+        self.deleted.append(ref)
 
     async def acknowledge(self, ref: MessageRef) -> None:
         self.acknowledged.append(ref)

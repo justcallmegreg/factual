@@ -36,6 +36,8 @@ from app.ledger.verify import Verifier
 from app.records.attachments import AttachmentFetcher, AttachmentIntake
 from app.records.filing import Filing
 from app.records.ingest import Ingestion
+from app.scheduler.daily_help import DailyHelp
+from app.scheduler.scheduler import Scheduler
 from app.storage.blobs import S3ObjectStore
 from app.storage.db import Database, run_migrations
 from app.storage.jobs import JobWorker
@@ -85,6 +87,8 @@ def create_app(
         job_task: asyncio.Task[None] | None = None
         sealer: Sealer | None = None
         seal_task: asyncio.Task[None] | None = None
+        scheduler: Scheduler | None = None
+        schedule_task: asyncio.Task[None] | None = None
         tsa_http: httpx.AsyncClient | None = None
         if start_services:
             log.info("applying migrations")
@@ -164,6 +168,19 @@ def create_app(
             app.state.jobs = jobs = JobWorker(
                 db, {AttachmentFetcher.KIND: fetcher, ANCHOR_JOB: anchoring}
             )
+            scheduled = []
+            if active.telegram_capture_chat_id is not None:
+                scheduled.append(
+                    DailyHelp(
+                        db,
+                        connector,
+                        ChatRef("telegram", active.telegram_capture_chat_id),
+                        timezone=active.timezone,
+                        at=active.daily_help_time,
+                    )
+                )
+            app.state.scheduler = scheduler = Scheduler(scheduled)
+            schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
             commands.options["ask_engine"] = AskEngine(
                 app.state.ledger,
                 db,
@@ -186,6 +203,13 @@ def create_app(
             log.info("connector started", extra={"factual.connector": connector.type})
         log.info("factual backend started")
         yield
+        if scheduler is not None and schedule_task is not None:
+            await scheduler.stop()
+            schedule_task.cancel()
+            try:
+                await schedule_task
+            except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001 — shutting down
+                log.debug("scheduler ended: %s", type(exc).__name__)
         if sealer is not None and seal_task is not None:
             await sealer.stop()
             seal_task.cancel()

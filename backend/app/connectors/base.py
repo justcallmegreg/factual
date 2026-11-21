@@ -173,5 +173,7 @@ class Connector(Protocol):
 
     async def send_file(self, chat: ChatRef, file: OutboundFile) -> SentRef: ...
 
+    async def delete_message(self, ref: MessageRef) -> None: ...
+
     async def acknowledge(self, ref: MessageRef) -> None:
         """The ✍ mark, or the platform's equivalent."""

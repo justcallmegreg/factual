@@ -267,3 +267,17 @@ qa_run = Table(
     Column("verdict", Text),
     Index("qa_run_day_idx", "kind", "asked_at"),
 )
+
+schedule_run = Table(
+    "schedule_run",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("job", Text, nullable=False),
+    Column("scheduled_for", DateTime(timezone=True), nullable=False),
+    Column("ran_at", DateTime(timezone=True), nullable=False),
+    Column("chat_id", BigInteger),
+    Column("message_id", BigInteger),
+    Column("status", Text, nullable=False),
+    Column("detail", Text),
+    Index("schedule_run_job_idx", "job", "scheduled_for", unique=True),
+)

@@ -435,9 +435,9 @@ As a member, I want the command list every morning, so that I remember what Thot
 
 **Tasks**
 
-- [ ] Implement the scheduler with the `schedule_run` table.
-- [ ] Implement the message with its status line.
-- [ ] Test the daylight-saving changes and restarts.
+- [x] Implement the scheduler with the `schedule_run` table.
+- [x] Implement the message with its status line.
+- [x] Test the daylight-saving changes and restarts.
 
 ### FAC-22 · Read-only HTTP API
 

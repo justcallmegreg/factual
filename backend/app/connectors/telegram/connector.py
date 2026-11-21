@@ -299,6 +299,9 @@ class TelegramConnector:
         )
         return SentRef(MessageRef(chat, result["message_id"]))
 
+    async def delete_message(self, ref: MessageRef) -> None:
+        await self.api.delete_message(ref.chat.chat_id, ref.message_id)
+
     async def fetch_blob(self, ref: BlobRef) -> AsyncIterator[bytes]:
         info = await self.api.get_file(ref.file_id)
         async for chunk in self.api.download(info["file_path"]):
