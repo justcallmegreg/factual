@@ -146,9 +146,9 @@ As a developer, I want `swagger.json` generated from the code, so that the API d
 
 **Tasks**
 
-- [ ] Write `scripts/export_openapi.py` with a stable key order and indentation.
-- [ ] Add the two Makefile targets.
-- [ ] Set the API title, description and version in the app factory.
+- [x] Write `scripts/export_openapi.py` with a stable key order and indentation.
+- [x] Add the two Makefile targets.
+- [x] Set the API title, description and version in the app factory.
 
 ### FAC-06 · CI pipeline
 

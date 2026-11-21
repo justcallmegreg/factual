@@ -18,7 +18,7 @@ VERSION = (BACKEND.parent / "VERSION.txt").read_text(encoding="utf-8").strip()
 
 
 def make(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 — fixed argv, no shell
+    return subprocess.run(
         ["make", "-s", *args], cwd=BACKEND, capture_output=True, text=True, check=False
     )
 
@@ -104,7 +104,7 @@ def test_compose_runs_backend_postgres_and_an_s3_store():
 def docker_available() -> bool:
     if not shutil.which("docker"):
         return False
-    probe = subprocess.run(  # noqa: S603
+    probe = subprocess.run(
         ["docker", "info"], capture_output=True, text=True, check=False, timeout=30
     )
     return probe.returncode == 0
@@ -116,7 +116,7 @@ needs_docker = pytest.mark.docker  # auto-skipped in conftest when no daemon ans
 @pytest.fixture(scope="module")
 def built_image():
     tag = f"factual-backend-test:{uuid.uuid4().hex[:8]}"
-    build = subprocess.run(  # noqa: S603
+    build = subprocess.run(
         ["docker", "build", "--build-arg", f"VERSION={VERSION}", "-t", tag, "."],
         cwd=BACKEND,
         capture_output=True,
@@ -126,12 +126,12 @@ def built_image():
     )
     assert build.returncode == 0, build.stderr[-3000:]
     yield tag
-    subprocess.run(["docker", "image", "rm", "-f", tag], capture_output=True, check=False)  # noqa: S603
+    subprocess.run(["docker", "image", "rm", "-f", tag], capture_output=True, check=False)
 
 
 @needs_docker
 def test_the_image_runs_as_a_non_root_user(built_image):
-    out = subprocess.run(  # noqa: S603
+    out = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "id", built_image, "-u"],
         capture_output=True,
         text=True,
@@ -142,7 +142,7 @@ def test_the_image_runs_as_a_non_root_user(built_image):
 
 @needs_docker
 def test_the_image_has_a_health_check_on_healthz(built_image):
-    out = subprocess.run(  # noqa: S603
+    out = subprocess.run(
         ["docker", "inspect", "--format", "{{json .Config.Healthcheck}}", built_image],
         capture_output=True,
         text=True,
@@ -156,7 +156,7 @@ def test_the_image_has_a_health_check_on_healthz(built_image):
 def test_the_container_serves_the_version_from_the_build_argument(built_image):
     env_file = BACKEND / ".env.example"
     name = f"factual-test-{uuid.uuid4().hex[:8]}"
-    run = subprocess.run(  # noqa: S603
+    run = subprocess.run(
         [
             "docker",
             "run",
@@ -177,7 +177,7 @@ def test_the_container_serves_the_version_from_the_build_argument(built_image):
     assert run.returncode == 0, run.stderr
     try:
         port = (
-            subprocess.run(  # noqa: S603
+            subprocess.run(
                 ["docker", "port", name, "8000/tcp"], capture_output=True, text=True, check=True
             )
             .stdout.strip()
@@ -196,13 +196,13 @@ def test_the_container_serves_the_version_from_the_build_argument(built_image):
                 last = exc
             time.sleep(1)
         else:
-            logs = subprocess.run(  # noqa: S603
+            logs = subprocess.run(
                 ["docker", "logs", name], capture_output=True, text=True, check=False
             )
             pytest.fail(f"container never answered: {last}\n{logs.stdout}\n{logs.stderr}")
-        health = subprocess.run(  # noqa: S603
+        health = subprocess.run(
             ["docker", "logs", name], capture_output=True, text=True, check=False
         ).stdout
-        assert '"service":{"name":"factual-backend","version":"%s"}' % VERSION in health
+        assert f'"service":{{"name":"factual-backend","version":"{VERSION}"}}' in health
     finally:
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)  # noqa: S603
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)

@@ -8,7 +8,7 @@ BUILD_ARGS ?=
 export VERSION
 
 .DEFAULT_GOAL := help
-.PHONY: help build up down run test lint
+.PHONY: help build up down run swagger swagger-check test lint
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
@@ -24,6 +24,12 @@ down: ## Stop the Compose stack
 
 run: ## Run the backend on this machine with auto-reload
 	APP_VERSION=$(VERSION) $(PYTHON) -m app --reload --port 8000
+
+swagger: ## Regenerate swagger.json from the FastAPI app
+	$(PYTHON) scripts/export_openapi.py > swagger.json
+
+swagger-check: ## Fail if swagger.json is out of date
+	$(PYTHON) scripts/export_openapi.py | diff - swagger.json
 
 test: ## Run the tests with pytest
 	$(PYTHON) -m pytest
