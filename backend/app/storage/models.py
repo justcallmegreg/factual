@@ -281,3 +281,21 @@ schedule_run = Table(
     Column("detail", Text),
     Index("schedule_run_job_idx", "job", "scheduled_for", unique=True),
 )
+
+derived_text = Table(
+    "derived_text",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("record_seq", BigInteger, ForeignKey("record.seq"), nullable=False),
+    Column("blob_seq", BigInteger, ForeignKey("blob.seq"), nullable=False),
+    Column("file_name", Text),
+    Column("mime", Text),
+    Column("model", Text),
+    Column("extracted_at", DateTime(timezone=True), nullable=False),
+    Column("text", Text),
+    Column("status", Text, nullable=False),
+    Column("pages", Integer),
+    Column("chars", Integer),
+    Index("derived_text_blob_idx", "blob_seq", unique=True),
+    Index("derived_text_record_idx", "record_seq"),
+)

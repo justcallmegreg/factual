@@ -171,6 +171,7 @@ class AttachmentFetcher:
         max_bytes: int = 20 * MB,
         clock: Clock | None = None,
         timezone: str = "UTC",
+        extract: bool = False,
     ) -> None:
         self.ledger = ledger
         self.db = db
@@ -181,6 +182,7 @@ class AttachmentFetcher:
         self.max_bytes = max_bytes
         self.clock = clock or system_clock
         self.zone = ZoneInfo(timezone)
+        self.extract = extract  # queue a text extraction for images and PDFs
 
     async def run(self, job: Job) -> None:
         p = job.payload
@@ -263,6 +265,21 @@ class AttachmentFetcher:
                         sha256_plain=result.sha256_plain,
                     )
                 )
+                if self.extract:
+                    from app.ai.extract import EXTRACT_JOB, extractable
+
+                    if extractable(mime):
+                        await enqueue(
+                            conn,
+                            EXTRACT_JOB,
+                            {
+                                "record_seq": record_seq,
+                                "blob_seq": appended.seq,
+                                "file_name": ref.file_name,
+                                "mime": mime,
+                            },
+                            now=now,
+                        )
         log.info(
             "attachment stored",
             extra=ctx(

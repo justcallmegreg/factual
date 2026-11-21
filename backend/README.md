@@ -84,6 +84,10 @@ Record text is untrusted: it reaches Claude as data, the tools are read-only (an
 
 At `DAILY_HELP_TIME` (default 06:00) in `TIMEZONE`, Thoth posts the command list and a status line (records without a project, the time of the last seal, the result of the last audit) in the capture chat and deletes the previous day's message. Each run is a row in `schedule_run`, keyed by the day's 06:00 instant, so a restart never sends twice; after an outage the message is still sent until 09:00, then the day is skipped. Daylight-saving changes are handled by the time zone (06:00 local in winter and summer). If no message arrives by 09:00, Thoth is down or was down that morning.
 
+### Text from images and PDFs
+
+After `attachment.stored`, a job sends each image (JPEG, PNG, GIF, WebP up to 5 MB) and each PDF (up to 20 MB and 100 pages, counted with pypdf) to Claude with the instruction to transcribe its text verbatim. The result lands in the `derived_text` projection with the model name and the time, and in the search index as a `derived` chunk, so `/ask` finds a photographed letter or a scanned contract; hits and answers show it as `[text read from <file>]`. Derived text is never evidence: the file and its hash in the `attachment.stored` entry stay the record. Files over the limits, unreadable PDFs and other types are recorded as skipped with the reason; a failing extraction is retried like any job and finally marked failed.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

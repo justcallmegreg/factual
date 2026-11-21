@@ -47,6 +47,7 @@ class Chat:
     worker: object = None
     signing_key: object = None
     sealer: object = None
+    extractor: object = None
     next_update: int = field(default=600000000)
     next_message: int = field(default=20000)
 
@@ -60,6 +61,7 @@ class Chat:
         seals: bool = False,
         tsa_urls: list[str] | None = None,
         signing_key=None,
+        extractor=None,
         **options,
     ) -> Chat:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -106,7 +108,14 @@ class Chat:
                 lock_days=3650,
                 clock=clock,
                 timezone=timezone,
+                extract=extractor is not None,
             )
+            if extractor is not None:
+                from app.ai.extract import ExtractionJob
+
+                handlers[ExtractionJob.KIND] = ExtractionJob(
+                    db, store, master_key, extractor, clock=clock
+                )
         if sealer is not None and tsa_urls:
             import httpx
 

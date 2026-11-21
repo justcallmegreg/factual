@@ -17,6 +17,7 @@ from fastapi import FastAPI
 
 from app.ai.ask import AskEngine
 from app.ai.client import AnthropicClaude
+from app.ai.extract import AnthropicExtractor, ExtractionJob
 from app.api.health import router as health_router
 from app.api.v1 import router as v1_router
 from app.commands.dispatcher import CommandDispatcher
@@ -149,6 +150,13 @@ def create_app(
                 lock_days=active.s3_object_lock_days,
                 max_bytes=connector.capabilities.max_file_bytes,
                 timezone=active.timezone,
+                extract=True,
+            )
+            extraction = ExtractionJob(
+                db,
+                store,
+                master_key,
+                AnthropicExtractor(active.anthropic_api_key, active.claude_model),
             )
             intake = AttachmentIntake(max_bytes=connector.capabilities.max_file_bytes)
             app.state.sink = sink = Ingestion(
@@ -174,7 +182,12 @@ def create_app(
             )
             sealer.after_seal.append(anchoring.after_seal)
             app.state.jobs = jobs = JobWorker(
-                db, {AttachmentFetcher.KIND: fetcher, ANCHOR_JOB: anchoring}
+                db,
+                {
+                    AttachmentFetcher.KIND: fetcher,
+                    ANCHOR_JOB: anchoring,
+                    ExtractionJob.KIND: extraction,
+                },
             )
             scheduled = []
             if active.telegram_capture_chat_id is not None:

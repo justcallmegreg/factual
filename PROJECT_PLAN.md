@@ -473,10 +473,10 @@ As a member, I want the text in photos and PDFs to be searchable, so that `/ask`
 
 **Tasks**
 
-- [ ] Add the extraction job after `attachment.stored`.
-- [ ] Send the file to Claude and store the result.
-- [ ] Add derived text to `search_chunk` and the label to the renderer.
-- [ ] Set a size limit and a page limit for each file.
+- [x] Add the extraction job after `attachment.stored`.
+- [x] Send the file to Claude and store the result.
+- [x] Add derived text to `search_chunk` and the label to the renderer.
+- [x] Set a size limit and a page limit for each file.
 
 ### FAC-24 · Nightly deep audit
 

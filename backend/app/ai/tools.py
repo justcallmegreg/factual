@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.core.clock import format_local
 from app.records.search import search
 from app.storage.db import Database
-from app.storage.models import attachment, record, record_version
+from app.storage.models import attachment, derived_text, record, record_version
 
 TOOLS: list[dict] = [
     {
@@ -202,16 +202,25 @@ class ToolExecutor:
     async def _attachment_text(self, conn: AsyncConnection, arguments: dict) -> dict:
         seq = int(arguments["seq"])
         rows = (await conn.execute(select(attachment).where(attachment.c.record_seq == seq))).all()
+        derived = (
+            await conn.execute(select(derived_text).where(derived_text.c.record_seq == seq))
+        ).all()
+        by_blob = {int(d.blob_seq): d for d in derived}
         self.seen.add(seq)
-        files = [
-            {
-                "file_name": r.file_name,
-                "kind": r.kind,
-                "mime": r.mime,
-                "size_bytes": r.size_bytes,
-                "status": r.status,
-                "derived_text": None,  # text read from images and PDFs arrives with a later story
-            }
-            for r in rows
-        ]
+        files = []
+        for r in rows:
+            d = by_blob.get(int(r.entry_seq)) if r.entry_seq is not None else None
+            done = d is not None and d.status == "done"
+            files.append(
+                {
+                    "file_name": r.file_name,
+                    "kind": r.kind,
+                    "mime": r.mime,
+                    "size_bytes": r.size_bytes,
+                    "status": r.status,
+                    "derived_text": d.text if done else None,
+                    "derived_from": d.model if done else None,
+                    "derived_status": d.status if d is not None else None,
+                }
+            )
         return {"seq": seq, "attachments": files}

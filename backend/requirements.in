@@ -13,3 +13,4 @@ ecs-logging
 boto3
 httpx
 rfc3161-client
+pypdf

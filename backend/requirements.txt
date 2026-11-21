@@ -123,6 +123,8 @@ pydantic-core==2.50.5
     # via pydantic
 pydantic-settings==2.16.3
     # via -r requirements.in
+pypdf==7.1.1
+    # via -r requirements.in
 python-dateutil==2.9.0.post0
     # via botocore
 python-dotenv==1.2.4
