@@ -25,6 +25,8 @@ from app.core.settings import Settings
 from app.core.version import read_version
 from app.ledger.keys import load_signing_key, public_key_bytes
 from app.ledger.ledger import Ledger
+from app.ledger.seals import Sealer
+from app.ledger.verify import Verifier
 from app.records.attachments import AttachmentFetcher, AttachmentIntake
 from app.records.filing import Filing
 from app.records.ingest import Ingestion
@@ -75,6 +77,8 @@ def create_app(
         polling: asyncio.Task[None] | None = None
         jobs: JobWorker | None = None
         job_task: asyncio.Task[None] | None = None
+        sealer: Sealer | None = None
+        seal_task: asyncio.Task[None] | None = None
         if start_services:
             log.info("applying migrations")
             await asyncio.to_thread(run_migrations, active.database_url)
@@ -86,9 +90,20 @@ def create_app(
             if hasattr(connector, "commands_menu"):
                 connector.commands_menu = list(COMMANDS)
             filing = Filing(app.state.ledger, db, connector, timezone=active.timezone)
+            verifier = Verifier(app.state.ledger.genesis, public_key_bytes(signing_key))
             commands = CommandDispatcher(
-                app.state.ledger, db, connector, timezone=active.timezone, filing=filing
+                app.state.ledger,
+                db,
+                connector,
+                timezone=active.timezone,
+                filing=filing,
+                verifier=verifier,
+                signing_key=signing_key,
             )
+            app.state.sealer = sealer = Sealer(
+                app.state.ledger, db, signing_key, interval=active.seal_interval_seconds
+            )
+            seal_task = asyncio.create_task(sealer.start(), name="sealer")
             master_key = active.master_key_file.read_bytes()
             if len(master_key) != 32:
                 raise RuntimeError(
@@ -132,6 +147,13 @@ def create_app(
             log.info("connector started", extra={"factual.connector": connector.type})
         log.info("factual backend started")
         yield
+        if sealer is not None and seal_task is not None:
+            await sealer.stop()
+            seal_task.cancel()
+            try:
+                await seal_task
+            except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001 — shutting down
+                log.debug("sealer ended: %s", type(exc).__name__)
         if jobs is not None and job_task is not None:
             await jobs.stop()
             job_task.cancel()

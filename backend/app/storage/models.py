@@ -58,7 +58,7 @@ instance = Table(
     CheckConstraint("id = 1", name="instance_single_row"),
 )
 
-EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance", "blob")
+EVIDENCE_TABLES = ("ledger_entry", "evidence_payload", "instance", "blob", "seal")
 
 # --- projections -----------------------------------------------------------------------
 
@@ -225,4 +225,16 @@ attachment = Table(
     Column("sha256_plain", LargeBinary),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Index("attachment_record_file_idx", "record_seq", "file_unique_id", unique=True),
+)
+
+seal = Table(
+    "seal",
+    metadata,
+    Column("no", BigInteger, primary_key=True),
+    Column("up_to_seq", BigInteger, ForeignKey("ledger_entry.seq"), nullable=False),
+    Column("body", LargeBinary, nullable=False, comment="canonical seal"),
+    Column("signature", LargeBinary, nullable=False),
+    Column("key_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index("seal_up_to_idx", "up_to_seq"),
 )

@@ -76,7 +76,9 @@ async def named_project(conn: AsyncConnection, words: list[str]) -> str | None:
     return row.name if row else None
 
 
-async def search(conn: AsyncConnection, question: str, *, limit: int = 5) -> SearchResult:
+async def search(
+    conn: AsyncConnection, question: str, *, limit: int = 5, verifier=None
+) -> SearchResult:
     """The best matches: one per record, ranked, the named project's records first."""
     words = await searched_words(conn, question)
     project = await named_project(conn, question_words(question))
@@ -144,7 +146,11 @@ async def search(conn: AsyncConnection, question: str, *, limit: int = 5) -> Sea
                 media_kinds=list(row.media_kinds or []),
                 file_name=row.file_name,
                 rank=float(row.rank),
-                status=await fast_status(conn, int(row.record_seq)),
+                status=(
+                    (await verifier.verify(conn, int(row.record_seq))).status
+                    if verifier is not None
+                    else await fast_status(conn, int(row.record_seq))
+                ),
             )
         )
     return SearchResult(hits, search_words, project)

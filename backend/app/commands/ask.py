@@ -21,7 +21,9 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
         await dispatcher.reply(event, USAGE)
         return
     async with dispatcher.db.engine.connect() as conn:
-        result = await search(conn, question, limit=HIT_LIMIT)
+        result = await search(
+            conn, question, limit=HIT_LIMIT, verifier=dispatcher.options.get("verifier")
+        )
     if not result.hits:
         words = ", ".join(word.lower() for word in result.words) or "nothing searchable"
         await dispatcher.reply(event, f"No records match. I searched for: {words}.")

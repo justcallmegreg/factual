@@ -45,8 +45,12 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
     if isinstance(seq, str):
         await dispatcher.reply(event, seq)
         return
+    verifier = dispatcher.options.get("verifier")
     async with dispatcher.db.engine.connect() as conn:
-        verification = await fast_verify(conn, seq, dispatcher.ledger.genesis)
+        if verifier is not None:
+            verification = await verifier.verify(conn, seq)
+        else:
+            verification = await fast_verify(conn, seq, dispatcher.ledger.genesis)
         if verification.entry is None and not verification.checks:
             await dispatcher.reply(event, f"No entry E{seq}.")
             return
@@ -75,6 +79,9 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
         observed = entry.get("observed_at")
         lines.append(f"Recorded {observed} · {verification.status}")
     lines.append(f"Checks: {verification.checks_line()}")
+    if verification.seal is not None:
+        info = verification.seal
+        lines.append(f"Seal {info.no} · {info.created_at} · covers up to E{info.up_to_seq}")
     if rec is not None and int(rec.version) > 1 and rec.edited_at is not None:
         lines.append(f"Versions: {rec.version} (edited {format_local(rec.edited_at, zone)})")
     if rec is not None:

@@ -56,6 +56,10 @@ A photo, document, voice note or video is listed in the `record.created` entry a
 
 A file over 20 MB (the cloud Bot API limit) gets an `attachment.unavailable` entry at ingestion and Thoth tells the sender at once. A download that keeps failing ends the same way after the last attempt, with a notice in the chat. Photos sent as one album form one record: every item is its own chained entry, but the later items reference the first one and their files join its record, which carries the one ✍ mark and the one picker.
 
+### Seals
+
+Every `SEAL_INTERVAL_SECONDS` (default 300) the sealer looks for entries beyond the last seal and, when there are any, writes a seal: `{v, no, up_to_seq, chain_head, prev_seal, created_at, key_id}` as canonical JSON, where `chain_head` is the chain value at the last entry and `prev_seal` is `SHA-256("ledger-seal-v1" ‖ previous seal)` (for the first seal, the hash of the chain's genesis value). The seal is signed with Ed25519 by the key in `SIGNING_KEY_FILE`; `key_id` is the key's fingerprint, `sha256:` over its DER public key, which `/status` shows. `/verify` and every `/ask` hit show the first seal that covers the entry, after checking the chain proof from the entry to that seal's head and the seal's signature. The `seal` table is insert-only like the other evidence tables.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.

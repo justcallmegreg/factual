@@ -45,6 +45,8 @@ class Chat:
     store: object = None
     master_key: bytes = b""
     worker: object = None
+    signing_key: object = None
+    sealer: object = None
     next_update: int = field(default=600000000)
     next_message: int = field(default=20000)
 
@@ -55,8 +57,14 @@ class Chat:
         *,
         timezone: str = "Europe/Amsterdam",
         attachments: bool = False,
+        seals: bool = False,
         **options,
     ) -> Chat:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        from app.ledger.keys import public_key_bytes
+        from app.ledger.seals import Sealer
+        from app.ledger.verify import Verifier
         from app.records.attachments import AttachmentFetcher, AttachmentIntake
         from app.records.filing import Filing
         from app.storage.blobs import InMemoryObjectStore
@@ -64,11 +72,22 @@ class Chat:
 
         clock = FakeClock(datetime(2026, 10, 29, 13, 3, 12, tzinfo=UTC))
         db = Database(database_url)
-        ledger = await Ledger.open(db, public_key=bytes([12]) * 32)
+        signing_key = Ed25519PrivateKey.generate()
+        ledger = await Ledger.open(db, public_key=public_key_bytes(signing_key))
         connector = NullConnector()
+        verifier = Verifier(ledger.genesis, public_key_bytes(signing_key))
+        sealer = Sealer(ledger, db, signing_key, interval=300, clock=clock) if seals else None
         filing = Filing(ledger, db, connector, timezone=timezone, clock=clock)
         commands = CommandDispatcher(
-            ledger, db, connector, timezone=timezone, filing=filing, clock=clock, **options
+            ledger,
+            db,
+            connector,
+            timezone=timezone,
+            filing=filing,
+            clock=clock,
+            verifier=verifier,
+            signing_key=signing_key,
+            **options,
         )
         store = master_key = worker = intake = None
         if attachments:
@@ -108,6 +127,8 @@ class Chat:
             store,
             master_key or b"",
             worker,
+            signing_key,
+            sealer,
         )
 
     async def close(self) -> None:

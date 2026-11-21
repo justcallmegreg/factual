@@ -364,10 +364,10 @@ As a member, I want the ledger sealed every 5 minutes, so that its state at that
 
 **Tasks**
 
-- [ ] Implement the sealer loop and the `seal` table.
-- [ ] Implement key loading, signing and the key fingerprint.
-- [ ] Add a command that creates a new signing key.
-- [ ] Test the seal chain and the signature check.
+- [x] Implement the sealer loop and the `seal` table.
+- [x] Implement key loading, signing and the key fingerprint.
+- [x] Add a command that creates a new signing key.
+- [x] Test the seal chain and the signature check.
 
 ### FAC-18 · Trusted timestamps
 
