@@ -24,8 +24,14 @@ async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
         result = await search(
             conn, question, limit=HIT_LIMIT, verifier=dispatcher.options.get("verifier")
         )
+    engine = dispatcher.options.get("ask_engine")
     if not result.hits:
         words = ", ".join(word.lower() for word in result.words) or "nothing searchable"
-        await dispatcher.reply(event, f"No records match. I searched for: {words}.")
+        sent = await dispatcher.reply(event, f"No records match. I searched for: {words}.")
+        if engine is not None:
+            await engine.answer(dispatcher, event, question, result, sent.message, "")
         return
-    await dispatcher.reply(event, render_hits(result.hits, dispatcher.zone))
+    hits_text = render_hits(result.hits, dispatcher.zone)
+    sent = await dispatcher.reply(event, hits_text)
+    if engine is not None:
+        await engine.answer(dispatcher, event, question, result, sent.message, hits_text)

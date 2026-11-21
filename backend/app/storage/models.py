@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     Computed,
@@ -252,4 +253,17 @@ seal_anchor = Table(
     Column("policy", Text),
     Column("added_at", DateTime(timezone=True), nullable=False),
     Index("seal_anchor_seal_idx", "seal_no", "kind"),
+)
+
+qa_run = Table(
+    "qa_run",
+    metadata,
+    Column("seq", BigInteger, ForeignKey("ledger_entry.seq"), primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("asked_by_id", BigInteger),
+    Column("asked_at", DateTime(timezone=True), nullable=False),
+    Column("model", Text),
+    Column("called_claude", Boolean, nullable=False, server_default="false"),
+    Column("verdict", Text),
+    Index("qa_run_day_idx", "kind", "asked_at"),
 )

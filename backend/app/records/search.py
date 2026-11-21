@@ -154,3 +154,54 @@ async def search(
             )
         )
     return SearchResult(hits, search_words, project)
+
+
+async def load_hits(conn: AsyncConnection, seqs: list[int], *, verifier=None) -> list[Hit]:
+    """Hit objects for given records (for answers that cite entry numbers), in the given order."""
+    if not seqs:
+        return []
+    rows = (
+        await conn.execute(
+            text(
+                """
+                SELECT r.seq, r.project, r.origin, r.author_name, r.forward_sender_name,
+                       r.forward_sent_at, r.observed_at, r.media_kinds, r.text, r.caption,
+                       convert_from(p.payload, 'UTF8')::json
+                         #>> '{normalized,attachments,0,file_name}' AS file_name
+                FROM record r LEFT JOIN evidence_payload p ON p.seq = r.seq
+                WHERE r.seq = ANY(CAST(:seqs AS bigint[]))
+                """
+            ),
+            {"seqs": seqs},
+        )
+    ).all()
+    by_seq = {int(r.seq): r for r in rows}
+    hits = []
+    for seq in seqs:
+        row = by_seq.get(seq)
+        if row is None:
+            continue
+        kind = "text" if row.text else "caption"
+        hits.append(
+            Hit(
+                seq=seq,
+                project=row.project,
+                kind=kind,
+                content=row.text or row.caption or "",
+                source=None,
+                origin=row.origin,
+                author_name=row.author_name,
+                forward_sender_name=row.forward_sender_name,
+                forward_sent_at=row.forward_sent_at,
+                observed_at=row.observed_at,
+                media_kinds=list(row.media_kinds or []),
+                file_name=row.file_name,
+                rank=0.0,
+                status=(
+                    (await verifier.verify(conn, seq)).status
+                    if verifier is not None
+                    else await fast_status(conn, seq)
+                ),
+            )
+        )
+    return hits

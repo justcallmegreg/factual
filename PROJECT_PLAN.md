@@ -417,11 +417,11 @@ As a member, I want Claude to answer my question in one line with cited records,
 
 **Tasks**
 
-- [ ] Add the Claude client with `ANTHROPIC_API_KEY` and `CLAUDE_MODEL`.
-- [ ] Implement the tools `search_records`, `get_context`, `get_versions` and `get_attachment_text`.
-- [ ] Implement the verdict schema, the citation check and the renderer.
-- [ ] Write prompt-injection tests with hostile record text.
-- [ ] Add the daily limit and the fallback.
+- [x] Add the Claude client with `ANTHROPIC_API_KEY` and `CLAUDE_MODEL`.
+- [x] Implement the tools `search_records`, `get_context`, `get_versions` and `get_attachment_text`.
+- [x] Implement the verdict schema, the citation check and the renderer.
+- [x] Write prompt-injection tests with hostile record text.
+- [x] Add the daily limit and the fallback.
 
 ### FAC-21 · Daily help message
 

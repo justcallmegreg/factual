@@ -15,6 +15,8 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from app.ai.ask import AskEngine
+from app.ai.client import AnthropicClaude
 from app.api.health import router as health_router
 from app.commands.dispatcher import CommandDispatcher
 from app.commands.menu import COMMANDS
@@ -161,6 +163,15 @@ def create_app(
             sealer.after_seal.append(anchoring.after_seal)
             app.state.jobs = jobs = JobWorker(
                 db, {AttachmentFetcher.KIND: fetcher, ANCHOR_JOB: anchoring}
+            )
+            commands.options["ask_engine"] = AskEngine(
+                app.state.ledger,
+                db,
+                AnthropicClaude(active.anthropic_api_key, active.claude_model),
+                model=active.claude_model,
+                daily_limit=active.ask_daily_limit,
+                timezone=active.timezone,
+                verifier=verifier,
             )
             app.state.pack_builder = commands.options["pack_builder"] = PackBuilder(
                 db,

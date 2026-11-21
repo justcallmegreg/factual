@@ -74,6 +74,12 @@ The tests run a local authority built on `openssl ts` (`tests/tsa_server.py`); o
 
 `verify.py` needs Python 3.9 or newer and the `openssl` command, nothing else: it recomputes the entry hashes and payload commitments with its own RFC 8785 canonicalizer, folds the chain proofs, checks the Ed25519 signatures with a plain-Python implementation of RFC 8032, runs `openssl ts -verify` on every token and hashes every attachment, then prints VERIFIED or FAILED and what the pack proves in one sentence per record. The tests run it with `python3 -I -S` so that nothing but the standard library can be imported. A pack over Telegram's 50 MB sending limit is not posted; Thoth points to `GET /api/v1/records/{seq}/proof` instead.
 
+### Claude's verdict
+
+After `/ask` posts the hits, Claude (`CLAUDE_MODEL`, default `claude-sonnet-5-5`, through the Anthropic SDK with `ANTHROPIC_API_KEY`) reads only the retrieved records, inside a `<records>` data block, and may call four read-only tools up to six times: `search_records`, `get_context`, `get_versions` and `get_attachment_text`. It must answer with JSON that matches the verdict schema (structured output: `supported`, `contradicted`, `changed_later`, `not_found` or `unclear`, a one-line summary, cited entry numbers with roles, caveats). Every cited number is checked against the records Claude was shown; a verdict with an unknown entry or none left becomes "No evidence found" followed by the searched words. Thoth then edits the hits message into the verdict line and the cited records printed from the ledger, with the caveats and a `/proof` line. When Claude is slow (15 s), unavailable or declines, the hits stay as the answer with a one-line note. Each run appends `qa.answered` (asker, model, cited entries, verdict, reason) and `ASK_DAILY_LIMIT` counts the runs that reached Claude per local day.
+
+Record text is untrusted: it reaches Claude as data, the tools are read-only (an unknown tool name gets an error result), and the output is schema-checked. The tests drive these guardrails with hostile record text and a scripted Claude; a live test runs when `ANTHROPIC_API_KEY` is set.
+
 ## Environment variables
 
 Factual is configured with environment variables only. `.env.example` lists every variable; copy it to `.env`, which is never committed.
