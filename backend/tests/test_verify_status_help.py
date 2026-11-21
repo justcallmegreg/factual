@@ -125,9 +125,9 @@ async def test_help_and_start_list_every_command(chat):
     assert help_text() == reply
 
 
-async def test_commands_that_come_in_a_later_phase_say_so(chat):
+async def test_respond_without_claude_says_that_it_is_not_configured(chat):
     await chat.say("/respond claim")
-    assert "not available yet" in chat.replies[-1]
+    assert chat.replies[-1] == "/respond is not available: Claude is not configured."
 
 
 async def test_the_command_menu_is_published_at_start_up():

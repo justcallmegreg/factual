@@ -507,10 +507,10 @@ As a member, I want a calm, evidence-only draft reply to a claim, so that I can 
 
 **Tasks**
 
-- [ ] Create the skill folder: `SKILL.md`, the reference files and `check_draft.py`.
-- [ ] Implement the tools `find_later_changes` and `verify_entry`.
-- [ ] Implement the quote insertion and the checker gate.
-- [ ] Build fixtures for the four cases of the change table and test them.
+- [x] Create the skill folder: `SKILL.md`, the reference files and `check_draft.py`.
+- [x] Implement the tools `find_later_changes` and `verify_entry`.
+- [x] Implement the quote insertion and the checker gate.
+- [x] Build fixtures for the four cases of the change table and test them.
 
 ### FAC-26 · Backup and restore
 

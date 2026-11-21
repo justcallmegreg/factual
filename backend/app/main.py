@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from app.ai.ask import AskEngine
 from app.ai.client import AnthropicClaude
 from app.ai.extract import AnthropicExtractor, ExtractionJob
+from app.ai.respond import RespondEngine
 from app.api.health import router as health_router
 from app.api.v1 import router as v1_router
 from app.commands.dispatcher import CommandDispatcher
@@ -224,6 +225,14 @@ def create_app(
                 )
             app.state.scheduler = scheduler = Scheduler(scheduled)
             schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
+            commands.options["respond_engine"] = RespondEngine(
+                app.state.ledger,
+                db,
+                AnthropicClaude(active.anthropic_api_key, active.claude_model, timeout=90.0),
+                model=active.claude_model,
+                timezone=active.timezone,
+                verifier=verifier,
+            )
             commands.options["ask_engine"] = AskEngine(
                 app.state.ledger,
                 db,

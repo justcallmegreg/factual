@@ -13,10 +13,3 @@ if TYPE_CHECKING:
 
 async def handle(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
     await dispatcher.reply(event, help_text())
-
-
-def not_yet(name: str):
-    async def handler(dispatcher: CommandDispatcher, event: SourceEvent) -> None:
-        await dispatcher.reply(event, f"/{name} is not available yet in this version.")
-
-    return handler
