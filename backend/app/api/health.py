@@ -22,8 +22,9 @@ class Version(BaseModel):
 
 
 class Readiness(BaseModel):
-    status: str
+    status: str  # ready | starting | not ready
     database: str
+    startup: str = "ready"  # ready | starting | auditing (…) | audit failed: … | start failed: …
 
 
 @router.get("/healthz", response_model=Health, summary="The process is alive")
@@ -44,9 +45,13 @@ async def version(request: Request) -> Version:
 )
 async def readyz(request: Request, response: Response) -> Readiness:
     db = getattr(request.app.state, "db", None)
+    startup = getattr(request.app.state, "startup", "ready")
     problem = await db.check() if db is not None else "database not started"
     if problem:
         log.warning("readiness check failed: %s", problem, extra=ctx(action="readyz.failed"))
         response.status_code = 503
-        return Readiness(status="not ready", database="unavailable")
-    return Readiness(status="ready", database="ok")
+        return Readiness(status="not ready", database="unavailable", startup=startup)
+    if startup != "ready":
+        response.status_code = 503
+        return Readiness(status="starting", database="ok", startup=startup)
+    return Readiness(status="ready", database="ok", startup="ready")

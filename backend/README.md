@@ -8,7 +8,7 @@ Contents: [Prerequisites](#prerequisites) · [Set-up](#set-up) · [Environment v
 
 - Python 3.12 or newer for `make run` and the tests.
 - Docker with Compose and Buildx for `make up` and `make build`.
-- PostgreSQL 14 or newer and an S3-compatible object store with Object Lock (the Compose stack provides both for development).
+- PostgreSQL 17 (the Compose stack provides it; any 14+ server runs the schema, but the restore drill needs `pg_dump`/`pg_restore` of the server's major version) and an S3-compatible object store with Object Lock (RustFS in the Compose stack).
 - A Telegram bot token from @BotFather, the Claude API key, and the addresses of two RFC 3161 time-stamping authorities.
 
 ## Set-up
@@ -42,7 +42,7 @@ The real-group test from the specification (does every mark notify the members, 
 
 ### Commands
 
-`/help` (and `/start`) print the command list; the same list is published as Telegram's command menu with `setMyCommands` at start-up, from `app/commands/menu.py`. `/verify`, as a reply or with an entry number, recomputes the entry hash, the payload commitment and the chain link of one entry and shows its filing history and versions. `/status` shows the polling state, the ledger head, the records without a project and, as later stories add them, the last seal, the key fingerprint and the last audit. Without `ANTHROPIC_API_KEY`, `/ask` stops at the verbatim hits and `/respond` answers that Claude is not configured.
+`/help` (and `/start`) print the command list; the same list is published as Telegram's command menu with `setMyCommands` at start-up, from `app/commands/menu.py`. `/verify`, as a reply or with an entry number, recomputes the entry hash, the payload commitment and the chain link of one entry and shows its filing history and versions. `/status` shows the polling state, the ledger head, the records without a project and, as later stories add them, the last seal, the key fingerprint and the last audit. `ANTHROPIC_API_KEY` is required at start-up; when Claude cannot be reached, is slow or is cut off, `/ask` stops at the verbatim hits and says why, and `/respond` says that no brief was produced.
 
 ### Search
 
@@ -210,7 +210,7 @@ Logs carry entry numbers, never record text, file contents, tokens or keys.
 
 ```sh
 make test     # pytest
-make lint     # ruff check .
+make lint     # ruff check . and ruff format --check .
 ```
 
 The tests that touch the database need a PostgreSQL server; `make up` provides one. Tests marked `docker` build and run the container image; they are skipped when no Docker daemon answers, and `pytest -m "not docker"` leaves them out on purpose.
@@ -270,7 +270,7 @@ Keep at least seven daily dumps plus one per month. A dump restores with the `pg
 3. Restore the bucket: `aws s3 sync s3://factual-backup s3://factual`, or set `S3_BUCKET=factual-backup`.
 4. Put `signing-key.pem` and `master.key` where `SIGNING_KEY_FILE` and `MASTER_KEY_FILE` point.
 5. Run the deep audit before Thoth starts: `python -m app audit --reason restore` (in the container: `docker compose run --rm backend python -m app audit --reason restore`). It checks the whole chain against every seal, every signature and token, re-hashes every attachment and prints `PASSED` or the exact entry, seal or object that failed. Only start Thoth after `PASSED`; a failure means the backup is damaged or incomplete: take an older dump.
-6. Start Thoth (`make up`). The start-up check compares the database cluster's identifier with the one recorded at the last start or audit (table `boot`); after the manual audit they match, so Thoth starts at once. Without the manual audit, the start detects the new cluster and runs the deep audit itself before the sealer, the jobs and the connector start; a failing audit stops the start with the finding in the log (`AUDIT_ON_START=never` overrides, `always` audits at every start).
+6. Start Thoth (`make up`). The start-up check compares the database cluster's identifier with the one recorded at the last start or audit (table `boot`); after the manual audit they match, so Thoth starts at once. Without the manual audit, the start detects the new cluster and runs the deep audit itself before the sealer, the jobs and the connector start. Meanwhile the process is alive (`/healthz` 200) and `/readyz` answers 503 with `startup: auditing (restore)`; after a failing audit `/readyz` keeps answering 503 with `startup: audit failed: …` and Thoth records nothing until the finding is fixed (`AUDIT_ON_START=never` overrides, `always` audits at every start).
 
 ### Restore drill
 

@@ -96,6 +96,7 @@ def create_app(
         scheduler: Scheduler | None = None
         schedule_task: asyncio.Task[None] | None = None
         tsa_http: httpx.AsyncClient | None = None
+        startup_task: asyncio.Task[None] | None = None
         if start_services:
             log.info("applying migrations")
             await asyncio.to_thread(run_migrations, active.database_url)
@@ -215,36 +216,6 @@ def create_app(
                 public_key=ledger.public_key,
                 anchoring=anchoring,
             )
-            # A restored database (another cluster than the last start saw) is audited in
-            # full before the sealer, the jobs and the connector start.
-            async with db.engine.connect() as conn:
-                app.state.boot = boot = await detect_restore(conn)
-            audit_seq = None
-            if active.audit_on_start == "always" or (
-                active.audit_on_start == "restore" and boot.restored
-            ):
-                reason = "restore" if boot.restored else "start"
-                log.warning(
-                    "running the deep audit before start (%s)",
-                    reason,
-                    extra=ctx(action="audit.start"),
-                )
-                result = await audit.run(reason=reason)
-                audit_seq = result.entry_seq
-                if not result.ok:
-                    raise RuntimeError(
-                        f"Deep audit failed after a restore: {summary_line(result)}. Thoth does "
-                        "not start; fix the finding, or set AUDIT_ON_START=never to start anyway."
-                    )
-            elif boot.restored:
-                log.warning(
-                    "database restored into another cluster; audit skipped (AUDIT_ON_START=never)",
-                    extra=ctx(action="audit.skipped"),
-                )
-            async with db.engine.begin() as conn:
-                await record_boot(
-                    conn, boot, kind="start", version=app.version, audit_seq=audit_seq
-                )
 
             async def audit_line() -> str:
                 async with db.engine.connect() as conn:
@@ -291,13 +262,69 @@ def create_app(
                 master_key=master_key,
                 timezone=active.timezone,
             )
-            seal_task = asyncio.create_task(sealer.start(), name="sealer")
-            schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
-            job_task = asyncio.create_task(jobs.start(), name="jobs")
-            polling = asyncio.create_task(connector.start(sink), name="connector")
-            log.info("connector started", extra={"factual.connector": connector.type})
+            app.state.startup = "starting"
+
+            async def bring_up() -> None:
+                """A restored database (another cluster than the last start saw) is audited
+                in full before the sealer, the jobs and the connector start; /healthz answers
+                meanwhile and /readyz says what is going on."""
+                nonlocal seal_task, schedule_task, job_task, polling
+                try:
+                    async with db.engine.connect() as conn:
+                        app.state.boot = boot = await detect_restore(conn)
+                    audit_seq = None
+                    if active.audit_on_start == "always" or (
+                        active.audit_on_start == "restore" and boot.restored
+                    ):
+                        reason = "restore" if boot.restored else "start"
+                        app.state.startup = f"auditing ({reason})"
+                        log.warning(
+                            "running the deep audit before start (%s)",
+                            reason,
+                            extra=ctx(action="audit.start"),
+                        )
+                        result = await audit.run(reason=reason)
+                        audit_seq = result.entry_seq
+                        if not result.ok:
+                            app.state.startup = f"audit failed: {summary_line(result)}"
+                            log.critical(
+                                "deep audit failed after a restore: %s. Thoth does not record; "
+                                "fix the finding, or set AUDIT_ON_START=never to start anyway",
+                                summary_line(result),
+                                extra=ctx(action="audit.failed"),
+                            )
+                            return
+                    elif boot.restored:
+                        log.warning(
+                            "database restored into another cluster; audit skipped "
+                            "(AUDIT_ON_START=never)",
+                            extra=ctx(action="audit.skipped"),
+                        )
+                    async with db.engine.begin() as conn:
+                        await record_boot(
+                            conn, boot, kind="start", version=app.version, audit_seq=audit_seq
+                        )
+                    seal_task = asyncio.create_task(sealer.start(), name="sealer")
+                    schedule_task = asyncio.create_task(scheduler.start(), name="scheduler")
+                    job_task = asyncio.create_task(jobs.start(), name="jobs")
+                    polling = asyncio.create_task(connector.start(sink), name="connector")
+                    app.state.startup = "ready"
+                    log.info("connector started", extra={"factual.connector": connector.type})
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — the process stays up, not ready
+                    app.state.startup = f"start failed: {type(exc).__name__}"
+                    log.critical("start failed: %s", exc, extra=ctx(action="start.failed"))
+
+            startup_task = asyncio.create_task(bring_up(), name="startup")
         log.info("factual backend started")
         yield
+        if startup_task is not None and not startup_task.done():
+            startup_task.cancel()
+            try:
+                await startup_task
+            except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001 — shutting down
+                log.debug("start-up ended: %s", type(exc).__name__)
         if scheduler is not None and schedule_task is not None:
             await scheduler.stop()
             schedule_task.cancel()

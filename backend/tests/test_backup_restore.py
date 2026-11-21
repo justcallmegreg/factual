@@ -87,13 +87,26 @@ class ConnectorThatLooks(NullConnector):
         await super().start(sink)
 
 
-def start_and_stop(settings, connector) -> None:
-    """Start the app and stop it again; the health request gives the loop a turn, so the
-    connector task has run its first step before the shutdown."""
+def start_until_settled(settings, connector) -> tuple[int, dict]:
+    """Start the app, wait until the start-up (and its audit, if any) has settled, stop it.
+    Returns the last /readyz status code and body."""
     from app.main import create_app
 
     with TestClient(create_app(settings=settings, connector_factory=lambda _: connector)) as client:
-        assert client.get("/healthz").status_code == 200
+        assert client.get("/healthz").status_code == 200, "alive while the start-up runs"
+        deadline = time.monotonic() + 60
+        while True:
+            ready = client.get("/readyz")
+            body = ready.json()
+            if body.get("startup") == "ready" or "failed" in body.get("startup", ""):
+                return ready.status_code, body
+            assert time.monotonic() < deadline, body
+            time.sleep(0.05)
+
+
+def start_and_stop(settings, connector) -> None:
+    code, body = start_until_settled(settings, connector)
+    assert code == 200 and body == {"status": "ready", "database": "ok", "startup": "ready"}, body
 
 
 async def populate(url: str, *, signing_key=None, attachments: bool = False, tsa_urls=None):
@@ -164,9 +177,10 @@ def test_a_failing_audit_after_a_restore_stops_the_start(db_settings):
         conn.execute("UPDATE evidence_payload SET payload = %s WHERE seq = 2", (b'{"x":1}',))
         conn.execute("ALTER TABLE evidence_payload ENABLE TRIGGER ALL")
     connector = ConnectorThatLooks(url)
-    with pytest.raises(RuntimeError, match="Deep audit failed after a restore.*E2"):
-        start_and_stop(db_settings, connector)
-    assert connector.audits_at_start is None, "Thoth did not start"
+    code, body = start_until_settled(db_settings, connector)
+    assert code == 503 and body["status"] == "starting" and body["database"] == "ok"
+    assert body["startup"].startswith("audit failed") and "E2" in body["startup"]
+    assert connector.audits_at_start is None, "Thoth did not start recording"
     assert boots(url)[-1][:2] == ("start", False), "the failed start is not recorded as a boot"
 
 
@@ -335,7 +349,10 @@ async def test_the_restore_drill_dumps_restores_into_a_fresh_database_and_audits
     needed = server_major(database_url)
     pg_dump, pg_restore = pg_tool("pg_dump", needed), pg_tool("pg_restore", needed)
     if pg_dump is None or pg_restore is None:
-        pytest.skip(f"no pg_dump/pg_restore for PostgreSQL {needed} (set FACTUAL_PG_DUMP)")
+        message = f"no pg_dump/pg_restore for PostgreSQL {needed} (set FACTUAL_PG_DUMP)"
+        if os.environ.get("CI"):
+            pytest.fail(message + ": the drill must run in CI")
+        pytest.skip(message)
     from app.ledger.audit import DeepAudit
     from app.ledger.keys import public_key_bytes
     from app.ledger.ledger import Ledger

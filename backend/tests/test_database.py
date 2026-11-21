@@ -193,13 +193,19 @@ def test_the_app_applies_the_migrations_at_start(settings, template_database, ke
 
 
 def test_readyz_reports_the_database_state(db_settings):
+    import time
+
     from app.main import create_app
 
     app = create_app(settings=db_settings, connector_factory=lambda _: NullConnector())
     with TestClient(app) as client:
+        deadline = time.monotonic() + 30
+        while client.get("/readyz").json()["startup"] != "ready":  # the start-up settles first
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
         ready = client.get("/readyz")
         assert ready.status_code == 200
-        assert ready.json() == {"status": "ready", "database": "ok"}
+        assert ready.json() == {"status": "ready", "database": "ok", "startup": "ready"}
 
         class Broken:
             async def check(self):
@@ -208,4 +214,8 @@ def test_readyz_reports_the_database_state(db_settings):
         app.state.db = Broken()
         down = client.get("/readyz")
         assert down.status_code == 503
-        assert down.json() == {"status": "not ready", "database": "unavailable"}
+        assert down.json() == {
+            "status": "not ready",
+            "database": "unavailable",
+            "startup": "ready",
+        }
